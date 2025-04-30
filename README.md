@@ -1,0 +1,3 @@
+- plot : Scripts for creating figures in manuscript.
+- process_docs : Documents with code for basic scRNA & ATAC process.
+- process : Related scripts for basic processing.
