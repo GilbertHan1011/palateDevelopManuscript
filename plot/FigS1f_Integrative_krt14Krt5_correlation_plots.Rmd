@@ -1,0 +1,781 @@
+---
+title: "Integrative Krt14 and Krt5 correlation plot"
+author: "Huan Liu"
+date: "2026-6-11"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  tidy = TRUE,
+  eval = FALSE,
+  tidy.opts = list(width.cutoff = 120),
+  message = TRUE,
+  warning = FALSE,
+  cache = TRUE,
+  label.duplicate = "append"
+)
+
+```
+
+This notebook records our approach to test the correlation between Krt14 and Krt5 in mouse embryonic palate epithelium, embryonic skin epithelium and young adult skin epithelium.
+
+# 1 Load packages and datasets
+
+```{r,load of packages and setup of the environment 1}
+gc()
+rm(list=ls())
+library(readr)
+library(dplyr)
+library(purrr)
+library(ggplot2)
+library(patchwork)
+
+
+```
+# 2 Extract Krt14 and Krt5 from different scRNA object
+## 2.1 Palate_zhao_epi
+
+```{r}
+Palate_zhao_epi <- readRDS(file = "./SeuratObject/Palate_zhao_epi_Celltype_marker_analysis.rds")
+
+```
+```{r}
+genes_use <- c("Krt5", "Krt14")
+
+## 检查 RNA 中是否存在
+DefaultAssay(Palate_zhao_epi) <- "RNA"
+
+genes_use[genes_use %in% rownames(Palate_zhao_epi[["RNA"]])]
+genes_use[!genes_use %in% rownames(Palate_zhao_epi[["RNA"]])]
+```
+
+```{r}
+
+Palate_zhao_epi <- NormalizeData(
+  Palate_zhao_epi,
+  assay = "RNA",
+  verbose = FALSE
+)
+
+## 提取 RNA normalized expression
+expr_RNA <- FetchData(
+  Palate_zhao_epi,
+  vars = genes_use,
+  assay = "RNA",
+  layer = "data"
+)
+
+expr_RNA$cellID <- rownames(expr_RNA)
+
+## 加 metadata
+meta_use <- Palate_zhao_epi@meta.data
+meta_use$cellID <- rownames(meta_use)
+
+cols_meta <- c("cellID", "Celltype", "Stage", "orig.ident")
+cols_meta <- cols_meta[cols_meta %in% colnames(meta_use)]
+
+expr_RNA_out <- expr_RNA %>%
+  left_join(
+    meta_use[, cols_meta, drop = FALSE],
+    by = "cellID"
+  ) %>%
+  select(cellID, Krt5, Krt14, everything())
+
+write.csv(
+  expr_RNA_out,
+  file = "./OutputTable/Palate_zhao_epi_Krt5_Krt14_RNA_expression.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+
+head(expr_RNA_out)
+```
+
+
+## 2.2 Young_skin
+```{r}
+skin_combined <- readRDS(file = "./young_integrated_celltype_20240125.rds")
+```
+
+
+
+### 2.2.1 Cluster information
+```{r}
+colnames(skin_combined@meta.data)
+
+table(skin_combined$timepoint)
+table(skin_combined$celltype)
+```
+
+
+```{r, initial plots}
+#group_by_cluster
+plot1 = DimPlot(skin_combined, reduction = "umap", pt.size=0.01, label = T, repel=T)
+# group_by_sample
+plot2 = DimPlot(skin_combined, reduction = "umap", pt.size=0.01, group.by = "timepoint")
+plot3 = DimPlot(skin_combined, reduction = "umap", pt.size=0.01, label = T, split.by  = "timepoint")
+# combine
+plotc <- plot1 + plot2
+ggsave("./skin_combined_umap.pdf", plot = plotc, width = 20, height = 10)
+plot3
+ggsave("./skin_combined_umap_split.pdf", plot = plot3, width = 24, height = 10)
+
+DimPlot(skin_combined, reduction = "umap", pt.size=0.01, label = T)
+DimPlot(skin_combined, reduction = "umap", pt.size=0.01, label = T,group.by = "orig.ident")
+
+```
+
+```{r,fig.height=6, fig.width=11}
+FeaturePlot(skin_combined, features = c("Krt5"),
+            cols = c("grey85",brewer.pal(9,"YlOrRd")),
+             split.by = "timepoint",label = T,repel = T,
+            ncol=2, pt.size = 0.3)
+ggsave("./skin_combined_krt5_split.pdf", device = "pdf", width = 11, height = 5)
+
+```
+
+```{r,fig.height=6, fig.width=11}
+FeaturePlot(skin_combined, features = c("Krt14"),
+            cols = c("grey85",brewer.pal(9,"YlOrRd")),
+             split.by = "timepoint",label = T,repel = T,
+            ncol=2, pt.size = 0.3)
+ggsave("./skin_combined_krt14_split.pdf", device = "pdf", width = 11, height = 5)
+
+```
+
+
+```{r}
+p1 <- FeaturePlot(
+  skin_combined,
+  features = "Krt5",
+  split.by = "timepoint",
+  cols = c("grey85", "grey85"),
+  pt.size = 0.3,
+  label = TRUE,
+  repel = TRUE,
+  combine = TRUE
+) + theme(legend.position = "right")
+
+ggsave("./skin_combined_Krt5_split_1.pdf", p1, width=11, height=5)
+
+```
+
+```{r}
+p_krt5 <- FeaturePlot(
+  skin_combined,
+  features = "Krt5",
+  split.by = "timepoint",
+  cols = c("grey85", brewer.pal(9, "YlOrRd")),
+  pt.size = 0.3,
+  label = TRUE,
+  repel = TRUE,
+  combine = TRUE        # 必须启用，否则不显示legend
+) + 
+  theme(legend.position = "right")
+
+ggsave("./skin_combined_krt5_split_with_scalebar.pdf",
+       p_krt5, width = 11, height = 5)
+
+```
+
+
+### 2.2.2 Subset Epithelium in uw
+```{r}
+skin_combined <- UpdateSeuratObject(skin_combined)
+
+skin_epi_uw <- subset(
+  skin_combined,
+  subset = timepoint == "uw" & celltype == "Epithelium"
+)
+```
+
+```{r}
+colnames(skin_combined@meta.data)
+
+table(skin_combined$timepoint)
+table(skin_combined$celltype)
+```
+```{r}
+skin_epi_uw <- subset(
+  skin_combined,
+  subset = timepoint == "uw" & celltype == "Epithelium"
+)
+
+skin_epi_uw
+
+table(skin_epi_uw$timepoint)
+table(skin_epi_uw$celltype)
+```
+
+```{r}
+
+
+saveRDS(
+  skin_epi_uw,
+  file = "./SeuratObject/skin_combined_uw_Epithelium_subset.rds"
+)
+```
+
+###2.2.3 Extract Krt14 and Krt5
+
+Extract RNA
+```{r}
+dir.create("./OutputTable", showWarnings = FALSE, recursive = TRUE)
+
+genes_use <- c("Krt5", "Krt14")
+
+DefaultAssay(skin_epi_uw) <- "RNA"
+
+## 检查基因是否存在
+genes_use[genes_use %in% rownames(skin_epi_uw[["RNA"]])]
+genes_use[!genes_use %in% rownames(skin_epi_uw[["RNA"]])]
+```
+
+```{r}
+## 如果 RNA data layer 还没有 normalized data，先 NormalizeData
+skin_epi_uw <- NormalizeData(
+  skin_epi_uw,
+  assay = "RNA",
+  verbose = FALSE
+)
+
+expr_skin_RNA <- FetchData(
+  skin_epi_uw,
+  vars = genes_use,
+  assay = "RNA",
+  layer = "data"
+)
+
+expr_skin_RNA$cellID <- rownames(expr_skin_RNA)
+
+meta_skin <- skin_epi_uw@meta.data
+meta_skin$cellID <- rownames(meta_skin)
+
+## 只保留你这个 object 里真实存在、后续有用的 metadata
+cols_meta <- c(
+  "cellID",
+  "sample_id",
+  "celltype",
+  "timepoint",
+  "orig.ident",
+  "run",
+  "version"
+)
+
+cols_meta <- cols_meta[cols_meta %in% colnames(meta_skin)]
+
+expr_skin_RNA_out <- expr_skin_RNA %>%
+  left_join(
+    meta_skin[, cols_meta, drop = FALSE],
+    by = "cellID"
+  ) %>%
+  mutate(Dataset = "mouse_skin_uw_Epithelium") %>%
+  select(
+    Dataset,
+    cellID,
+    sample_id,
+    celltype,
+    timepoint,
+    Krt5,
+    Krt14,
+    everything()
+  )
+
+write.csv(
+  expr_skin_RNA_out,
+  file = "./OutputTable/mouse_skin_uw_Epithelium_Krt5_Krt14_RNA_expression.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+
+head(expr_skin_RNA_out)
+```
+
+```{r}
+cor.test(
+  expr_skin_RNA_out$Krt5,
+  expr_skin_RNA_out$Krt14,
+  method = "spearman"
+)
+```
+
+
+
+# 3 Import RNA matrix
+
+```{r}
+## 1. Define input files
+## =========================================================
+
+file_info <- data.frame(
+  scRNA_datasets = c(
+    "Young_adult_mice_skin_epi",
+    "Embryo_mice_skin_epi",
+    "Embryo_mice_palate_epi"
+  ),
+  file_path = c(
+    "./OutputTable/mouse_skin_uw_Epithelium_Krt5_Krt14_RNA_expression.csv",
+    "./OutputTable/Adata-object_Epi_Krt5_Krt14_normalized_expression.csv",
+    "./OutputTable/Palate_zhao_epi_Krt5_Krt14_RNA_expression.csv"
+  ),
+  stringsAsFactors = FALSE
+)
+
+file_info
+```
+
+```{r}
+file_info$file_exists <- file.exists(file_info$file_path)
+
+file_info
+```
+
+```{r}
+## =========================================================
+## 2. Read files
+## =========================================================
+
+expr_list <- list()
+
+for (i in seq_len(nrow(file_info))) {
+  
+  dataset_i <- file_info$scRNA_datasets[i]
+  file_i <- file_info$file_path[i]
+  
+  message("Reading: ", dataset_i)
+  message("File: ", file_i)
+  
+  expr_list[[dataset_i]] <- read.csv(
+    file_i,
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  
+  message("Dimension:")
+  print(dim(expr_list[[dataset_i]]))
+  
+  message("Column names:")
+  print(colnames(expr_list[[dataset_i]]))
+  
+  message("First rows:")
+  print(head(expr_list[[dataset_i]]))
+  
+  message("--------------------------------------------------")
+}
+```
+
+# 4 Merge three table
+```{r}
+## =========================================================
+## Standardize three Krt5/Krt14 expression tables
+## =========================================================
+
+Young_adult_mice_skin_epi <- expr_list[["Young_adult_mice_skin_epi"]] %>%
+  mutate(
+    scRNA_datasets = "Young adult mice skin epithelium",
+    cellID = cellID,
+    group = timepoint,
+    sample_id = sample_id
+  ) %>%
+  select(
+    scRNA_datasets,
+    cellID,
+    Krt5,
+    Krt14,
+    group,
+    sample_id,
+    everything()
+  )
+
+Embryo_mice_skin_epi <- expr_list[["Embryo_mice_skin_epi"]] %>%
+  mutate(
+    scRNA_datasets = "Embryonic mice skin epithelium",
+    cellID = cell_id,
+    group = embryonic_age,
+    sample_id = sample_id
+  ) %>%
+  select(
+    scRNA_datasets,
+    cellID,
+    Krt5,
+    Krt14,
+    group,
+    sample_id,
+    everything()
+  )
+
+Embryo_mice_palate_epi <- expr_list[["Embryo_mice_palate_epi"]] %>%
+  mutate(
+    scRNA_datasets = "Embryonic mice palatal epithelium",
+    cellID = cellID,
+    group = Stage,
+    sample_id = orig.ident
+  ) %>%
+  select(
+    scRNA_datasets,
+    cellID,
+    Krt5,
+    Krt14,
+    group,
+    sample_id,
+    everything()
+  )
+
+Krt5_Krt14_expr_merged <- bind_rows(
+  Young_adult_mice_skin_epi,
+  Embryo_mice_skin_epi,
+  Embryo_mice_palate_epi
+)
+
+Krt5_Krt14_expr_merged$scRNA_datasets <- factor(
+  Krt5_Krt14_expr_merged$scRNA_datasets,
+  levels = c(
+    "Young adult mice skin epithelium",
+    "Embryonic mice skin epithelium",
+    "Embryonic mice palatal epithelium"
+  )
+)
+
+head(Krt5_Krt14_expr_merged)
+table(Krt5_Krt14_expr_merged$scRNA_datasets)
+```
+```{r}
+write.csv(
+  Krt5_Krt14_expr_merged,
+  file = "./OutputTable/Krt5_Krt14_expression_merged_three_datasets.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+```
+
+# 5 Calculate Spearman
+```{r}
+cor_summary_three <- Krt5_Krt14_expr_merged %>%
+  group_by(scRNA_datasets) %>%
+  summarise(
+    n = n(),
+    spearman_rho = cor(Krt5, Krt14, method = "spearman", use = "complete.obs"),
+    pearson_r = cor(Krt5, Krt14, method = "pearson", use = "complete.obs"),
+    .groups = "drop"
+  )
+
+cor_summary_three
+
+write.csv(
+  cor_summary_three,
+  file = "./OutputTable/Krt5_Krt14_correlation_summary_three_datasets.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+```
+
+```{r}
+p_Krt5_Krt14_scatter_three <- ggplot(
+  Krt5_Krt14_expr_merged,
+  aes(x = Krt5, y = Krt14)
+) +
+  geom_point(
+    aes(color = scRNA_datasets),
+    size = 0.35,
+    alpha = 0.45
+  ) +
+  facet_wrap(
+    ~ scRNA_datasets,
+    nrow = 1,
+    scales = "free"
+  ) +
+  theme_classic() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 11),
+    legend.position = "right"
+  ) +
+  labs(
+    x = "Krt5 expression",
+    y = "Krt14 expression",
+    color = "scRNA-seq dataset"
+  )
+
+p_Krt5_Krt14_scatter_three
+```
+
+```{r}
+dataset_colors <- c(
+  "Young adult mice skin epithelium" = "#00BFC4",
+  "Embryonic mice skin epithelium" = "#7CAE00",
+  "Embryonic mice palatal epithelium" = "#F8766D"
+)
+
+p_Krt5_Krt14_scatter_three <- ggplot(
+  Krt5_Krt14_expr_merged,
+  aes(x = Krt5, y = Krt14)
+) +
+  geom_point(
+    aes(color = scRNA_datasets),
+    size = 0.35,
+    alpha = 0.45
+  ) +
+  facet_wrap(
+    ~ scRNA_datasets,
+    nrow = 1,
+    scales = "free"
+  ) +
+  scale_color_manual(values = dataset_colors) +
+  theme_classic() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 11),
+    legend.position = "right"
+  ) +
+  labs(
+    x = "Krt5 expression",
+    y = "Krt14 expression",
+    color = "scRNA-seq dataset"
+  )
+
+p_Krt5_Krt14_scatter_three
+```
+
+
+```{r}
+ggsave(
+  "./OutputFigure/Krt5_Krt14_scatter_three_scRNA_datasets.pdf",
+  plot = p_Krt5_Krt14_scatter_three,
+  width = 9,
+  height = 3.2,
+  units = "in"
+)
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+## correlation label
+cor_label_df <- cor_summary_three %>%
+  mutate(
+    label = paste0(
+      "Spearman \u03c1 = ",
+      round(spearman_rho, 2),
+      "\nPearson r = ",
+      round(pearson_r, 2)
+    )
+  )
+
+p_Krt5_Krt14_scatter_three_lm <- ggplot(
+  Krt5_Krt14_expr_merged,
+  aes(x = Krt5, y = Krt14)
+) +
+  geom_point(
+    aes(color = scRNA_datasets),
+    size = 0.35,
+    alpha = 0.35
+  ) +
+  geom_smooth(
+    method = "lm",
+    se = FALSE,
+    color = "black",
+    linewidth = 0.6
+  ) +
+  geom_text(
+    data = cor_label_df,
+    aes(
+      x = Inf,
+      y = Inf,
+      label = label
+    ),
+    inherit.aes = FALSE,
+    hjust = 1.05,
+    vjust = 1.2,
+    size = 3
+  ) +
+  facet_wrap(
+    ~ scRNA_datasets,
+    nrow = 1,
+    scales = "free"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Young adult mice skin epithelium" = "#00BFC4",
+      "Embryonic mice skin epithelium" = "#7CAE00",
+      "Embryonic mice palatal epithelium" = "#F8766D"
+    )
+  ) +
+  theme_classic() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 11),
+    legend.position = "none"
+  ) +
+  labs(
+    x = "Krt5 expression",
+    y = "Krt14 expression"
+  )
+
+p_Krt5_Krt14_scatter_three_lm
+```
+
+```{r}
+ggsave(
+  "./OutputFigure/Krt5_Krt14_scatter_three_scRNA_datasets_lm_spearman.pdf",
+  plot = p_Krt5_Krt14_scatter_three_lm,
+  width = 9,
+  height = 3.2,
+  units = "in"
+)
+```
+
+
+
+```{r}
+p_Krt5_Krt14_scatter_three_loess <- ggplot(
+  Krt5_Krt14_expr_merged,
+  aes(x = Krt5, y = Krt14)
+) +
+  geom_point(
+    aes(color = scRNA_datasets),
+    size = 0.35,
+    alpha = 0.35
+  ) +
+  geom_smooth(
+    method = "loess",
+    se = FALSE,
+    color = "black",
+    linewidth = 0.6
+  ) +
+  geom_text(
+    data = cor_label_df,
+    aes(
+      x = Inf,
+      y = Inf,
+      label = label
+    ),
+    inherit.aes = FALSE,
+    hjust = 1.05,
+    vjust = 1.2,
+    size = 3
+  ) +
+  facet_wrap(
+    ~ scRNA_datasets,
+    nrow = 1,
+    scales = "free"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Young adult mice skin epithelium" = "#00BFC4",
+      "Embryonic mice skin epithelium" = "#7CAE00",
+      "Embryonic mice palatal epithelium" = "#F8766D"
+    )
+  ) +
+  theme_classic() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 11),
+    legend.position = "none"
+  ) +
+  labs(
+    x = "Krt5 expression",
+    y = "Krt14 expression"
+  )
+
+p_Krt5_Krt14_scatter_three_loess
+```
+
+```{r}
+ggsave(
+  "./OutputFigure/Krt5_Krt14_scatter_three_scRNA_datasets_loess_spearman.pdf",
+  plot = p_Krt5_Krt14_scatter_three_loess,
+  width = 9,
+  height = 3.2,
+  units = "in"
+)
+```
+
+
+# 6 Correlation plot (Supplementary Fig 1f)
+```{r}
+cor_summary_three <- Krt5_Krt14_expr_merged %>%
+  group_by(scRNA_datasets) %>%
+  summarise(
+    n = n(),
+    spearman_rho = cor(Krt5, Krt14, method = "spearman", use = "complete.obs"),
+    pearson_r = cor(Krt5, Krt14, method = "pearson", use = "complete.obs"),
+    .groups = "drop"
+  )
+
+cor_summary_three
+```
+
+```{r}
+p_Krt5_Krt14_scatter_three <- ggplot(
+  Krt5_Krt14_expr_merged,
+  aes(x = Krt5, y = Krt14)
+) +
+  geom_point(
+    aes(color = scRNA_datasets),
+    size = 0.35,
+    alpha = 0.40
+  ) +
+  geom_text(
+    data = cor_label_df,
+    aes(
+      x = Inf,
+      y = Inf,
+      label = label
+    ),
+    inherit.aes = FALSE,
+    hjust = 1.05,
+    vjust = 1.2,
+    size = 3.5
+  ) +
+  facet_wrap(
+    ~ scRNA_datasets,
+    nrow = 1,
+    scales = "free"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Young adult mice skin epithelium" = "#00BFC4",
+      "Embryonic mice skin epithelium" = "#7CAE00",
+      "Embryonic mice palatal epithelium" = "#F8766D"
+    )
+  ) +
+  theme_classic() +
+  theme(
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    strip.background = element_blank(),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 11),
+    legend.position = "none"
+  ) +
+  labs(
+    x = "Krt5 expression",
+    y = "Krt14 expression"
+  )
+
+p_Krt5_Krt14_scatter_three
+```
+
+```{r}
+ggsave(
+  "./OutputFigure/Krt5_Krt14_scatter_three_scRNA_datasets_spearman.pdf",
+  plot = p_Krt5_Krt14_scatter_three,
+  width = 9,
+  height = 3.2,
+  units = "in"
+)
+```

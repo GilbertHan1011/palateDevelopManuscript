@@ -1,0 +1,2244 @@
+---
+title: "palate_scRNA_zhao_2024_plot"
+output: html_document
+date: "2026-04-14"
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  tidy = TRUE,
+  eval = FALSE,
+  tidy.opts = list(width.cutoff = 120),
+  message = TRUE,
+  warning = FALSE,
+  cache = TRUE,
+  label.duplicate = "append"
+)
+
+```
+This Rmd plot for Fig1a,b, and Supplementary Fig1 a-e
+
+# 1 Load packages and datasets
+
+```{r,load of packages and setup of the environment 1}
+gc()
+rm(list=ls())
+library(Seurat)
+library(data.table)
+library(scales)
+library(plotly)
+library(ggplot2)
+library(slingshot)
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+library(cowplot)
+library(gridExtra)
+library(viridis)
+library(readr)
+library(Hmisc)
+library(ggpubr)
+library(rsample)
+library(tidymodels)
+library(scales)
+library(tradeSeq)
+library(pheatmap)
+library(scCustomize)
+#library(destiny)
+library(plot3D)
+library(rgl)
+library(patchwork)
+library(RColorBrewer)
+
+
+set.seed(12)
+theme_set(theme_bw())
+
+Palate_zhao <- readRDS("./SeuratObject/20260511_palate_Zhao.rds")
+
+
+```
+
+
+
+
+## 1.1 Inspect datasets
+### 1.1.1 Check cell percentage and stages
+
+
+```{r, check cell percentage}
+DefaultAssay(Palate_zhao) <- "ATAC"
+table(Palate_zhao@meta.data[["celltype"]])
+table(Palate_zhao@meta.data[["orig.ident"]])
+```
+```{r, check cell percentage}
+DefaultAssay(Palate_zhao) <- "RNA"
+table(Palate_zhao@meta.data[["celltype"]])
+table(Palate_zhao@meta.data[["orig.ident"]])
+```
+
+## 1.1.2 Combine Developmental Stage
+Now we add stage and unified parameters to this dataset
+```{r}
+DefaultAssay(Palate_zhao) <- "RNA"
+
+Palate_zhao$Stage <- case_when(
+  Palate_zhao$orig.ident %in% c("Zhao_E125-1", "Zhao_E125-2") ~ "E12.5",
+  Palate_zhao$orig.ident %in% c("Zhao_E135-1", "Zhao_E135-2", "Zhao_E135-3") ~ "E13.5",
+  Palate_zhao$orig.ident %in% c("Zhao_E140-1", "Zhao_E140-2") ~ "E14.0",
+  Palate_zhao$orig.ident %in% c("Zhao_E145-1", "Zhao_E145-2") ~ "E14.5",
+  TRUE ~ NA_character_
+)
+
+Palate_zhao$Dataset <- "Zhao"
+#Palate_zhao$Anatomy <- "palate"
+Palate_zhao$SampleID <- Palate_zhao$orig.ident
+```
+
+Inspect the staging
+```{r}
+table(Palate_zhao$orig.ident, Palate_zhao$Stage)
+table(Palate_zhao$Stage, useNA = "ifany")
+```
+
+## 1.1.3 Check celltype distribution in different Stage
+```{r, celltype count}
+# 统计每个 Stage 中各 celltype 的细胞数
+celltype_stage_count <- Palate_zhao@meta.data %>%
+  group_by(Stage, celltype) %>%
+  summarise(n_cells = n(), .groups = "drop") %>%
+  arrange(Stage, desc(n_cells))
+
+celltype_stage_count
+```
+
+```{r, check cell number in different stages}
+p1 <- ggplot(celltype_stage_count, aes(x = Stage, y = n_cells, fill = celltype)) +
+  geom_bar(stat = "identity", width = 0.75) +
+  theme_classic(base_size = 14) +
+  labs(
+    x = "Stage",
+    y = "Number of cells",
+    fill = "Cell type"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    legend.position = "right"
+  )
+
+p1
+```
+
+```{r, export cell number count table}
+# Convert to cell number dataframe
+celltype_stage_matrix <- table(Palate_zhao$celltype, Palate_zhao$Stage)
+
+celltype_stage_matrix
+
+celltype_stage_matrix_df <- as.data.frame.matrix(celltype_stage_matrix)
+
+celltype_stage_matrix_df
+
+dir.create("./OutputTable", showWarnings = FALSE)
+
+write.csv(
+  celltype_stage_count,
+  "./OutputTable/Palate_zhao_celltype_count_by_Stage_long.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  celltype_stage_matrix_df,
+  "./OutputTable/Palate_zhao_celltype_count_by_Stage_matrix.csv"
+)
+```
+
+
+
+
+# 2 Basic plot
+## 2.1 plot for scRNA
+### 2.1.1 UMAP plot (Fig1a and Supp Fig1a)
+```{r}
+# 设置 RNA assay
+DefaultAssay(Palate_zhao) <- "RNA"
+
+# 设置细胞类型为身份
+Idents(Palate_zhao) <- Palate_zhao$celltype
+
+# 创建输出文件夹
+dir.create("./OutputFigure", showWarnings = FALSE)
+
+# 确认可用 reductions
+Reductions(Palate_zhao)
+
+# 使用 RNA Harmony UMAP
+umap_use <- "umap.harmony"
+
+# group_by_celltype
+plot1 <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE
+)
+
+# group_by_orig.ident
+plot2 <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  group.by = "orig.ident"
+)
+
+# group_by_Stage
+plot3 <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  group.by = "Stage"
+)
+
+# split_by_orig.ident
+plot4 <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE,
+  split.by = "orig.ident"
+)
+
+# split_by_Stage
+plot5 <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE,
+  split.by = "Stage"
+)
+
+# combine: celltype + orig.ident + Stage
+plotc <- plot1 + plot2 + plot3
+
+ggsave(
+  "./OutputFigure/Palate_zhao_umap_harmony_celltype_origident_Stage.pdf",
+  plot = plotc,
+  width = 30,
+  height = 10
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_umap_harmony_split_by_origident.pdf",
+  plot = plot4,
+  width = 24,
+  height = 10
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_umap_harmony_split_by_Stage.pdf",
+  plot = plot5,
+  width = 16,
+  height = 10
+)
+
+# 单独查看
+DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE
+)
+
+DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  group.by = "orig.ident"
+)
+
+DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  pt.size = 0.01,
+  group.by = "Stage"
+)
+```
+
+```{r}
+library(Seurat)
+library(ggplot2)
+
+## 1. 设定 identity
+Idents(Palate_zhao) <- "celltype"
+# 使用 RNA Harmony UMAP
+umap_use <- "umap.harmony"
+
+## 2. 提取 Epithelial 细胞
+cells_epi <- WhichCells(Palate_zhao, idents = "Epithelial")
+
+## 3. 绘图
+p_umap_epi_highlight <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  cells.highlight = cells_epi,
+  cols = "grey85",
+  cols.highlight = "#f8766d",
+  pt.size = 0.15,
+  sizes.highlight = 0.15
+) +
+  theme_classic() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  labs(
+    title = "Whole palate scRNA-seq atlas",
+    x = "UMAP_1",
+    y = "UMAP_2"
+  )
+
+p_umap_epi_highlight
+
+library(dplyr)
+
+## 提取 UMAP 坐标
+umap_df <- as.data.frame(Embeddings(Palate_zhao, umap_use))
+umap_df$celltype <- Palate_zhao$celltype
+
+## 计算每个 celltype 的标签位置
+label_df <- umap_df %>%
+  group_by(celltype) %>%
+  summarise(
+    UMAP_1 = median(UMAP_1),
+    UMAP_2 = median(UMAP_2)
+  )
+
+## 重新作图并加标签
+p_umap_epi_highlight_label <- DimPlot(
+  Palate_zhao,
+  reduction = umap_use,
+  cells.highlight = cells_epi,
+  cols = "grey85",
+  cols.highlight = "#f8766d",
+  pt.size = 0.15,
+  sizes.highlight = 0.15
+) +
+  geom_text(
+    data = label_df,
+    aes(x = UMAP_1, y = UMAP_2, label = celltype),
+    inherit.aes = FALSE,
+    size = 6
+  ) +
+  theme_classic() +
+  theme(
+    axis.line = element_line(color = "black"),
+    axis.text = element_text(color = "black"),
+    plot.title = element_text(hjust = 0.5)
+  ) +
+  labs(
+    title = "Major cell classes in GSE218576 palate scRNA-seq",
+    x = "UMAP_1",
+    y = "UMAP_2"
+  )
+
+p_umap_epi_highlight_label
+
+ggsave(
+  "./OutputFigure/Palate_zhao_celltype_UMAP_Epithelial_highlight.pdf",
+  plot = p_umap_epi_highlight_label,
+  width = 6,
+  height = 5.5
+)
+```
+
+##2.2 Marker genes Dotplot  (Supp Fig1b)
+```{r}
+## Use celltype for marker identification
+Idents(Palate_zhao) <- "celltype"
+
+## Check celltype numbers
+table(Idents(Palate_zhao))
+
+## Perform DE using RNA rather than SCT
+DefaultAssay(Palate_zhao) <- "RNA"
+
+## Normalize RNA data if necessary
+Palate_zhao <- NormalizeData(
+  Palate_zhao,
+  assay = "RNA",
+  verbose = FALSE
+)
+
+## Scale RNA data
+all.genes <- rownames(Palate_zhao)
+
+Palate_zhao <- ScaleData(
+  Palate_zhao,
+  assay = "RNA",
+  features = all.genes,
+  verbose = FALSE
+)
+
+## Identify positive marker genes for each celltype
+Palate_zhao_celltype_markers <- FindAllMarkers(
+  object = Palate_zhao,
+  assay = "RNA",
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.25
+)
+
+## Top 10 markers per celltype
+top10_celltype <- Palate_zhao_celltype_markers %>%
+  group_by(cluster) %>%
+  slice_max(
+    order_by = avg_log2FC,
+    n = 10,
+    with_ties = FALSE
+  ) %>%
+  ungroup()
+
+## Top 6 markers using scCustomize
+top6_celltype_markers <- Extract_Top_Markers(
+  marker_dataframe = Palate_zhao_celltype_markers,
+  num_genes = 6,
+  named_vector = FALSE,
+  make_unique = TRUE
+)
+```
+```{r}
+write.csv(
+  Palate_zhao_celltype_markers,
+  file = "./OutputTable/Palate_zhao_celltype_markers_RNA.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  top10_celltype,
+  file = "./OutputTable/Palate_zhao_celltype_top10_markers_RNA.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  top6_celltype_markers,
+  file = "./OutputTable/Palate_zhao_celltype_top6_markers_RNA.csv",
+  row.names = FALSE
+)
+```
+
+
+
+
+```{r}
+## 1. 设置 marker genes
+## 按照你附图中的 celltype marker 顺序
+genes_to_check <- c(
+  "Epcam", "Grhl2", "Cdh1",      # Epithelial
+  "Prrx1", "Col1a1", "Twist1",     # Mesenchymal
+  "Acta2", "Parm1", "Neb",       # Myogenic
+  "Plxna4", "Grik2", "Sorcs1",        # Glial
+  "Elmo1", "Ptprc",                # Myeloid
+  "Cdh5", "Cldn5" ,  "Flt1",      # Endothelial
+  "Hbb-y", "Hba-a1", "Hba-a2"      # Erythroid
+)
+
+## 去重，避免 DotPlot 重复 gene 报错或显示混乱
+genes_to_check <- unique(genes_to_check)
+
+## 检查基因是否存在
+DefaultAssay(Palate_zhao) <- "RNA"
+
+genes_present <- genes_to_check[genes_to_check %in% rownames(Palate_zhao)]
+genes_missing <- genes_to_check[!genes_to_check %in% rownames(Palate_zhao)]
+
+genes_present
+genes_missing
+```
+
+
+```{r}
+## =========================================================
+## DotPlot for Palate_zhao whole object
+## =========================================================
+
+
+desired_order <- c(
+  "Erythroid",
+  "Endothelial",
+  "Glial",
+  "Myogenic",
+  "Myeloid",
+  "Mesenchymal",
+  "Epithelial"
+)
+
+Palate_zhao$celltype <- factor(
+  Palate_zhao$celltype,
+  levels = desired_order
+)
+
+Idents(Palate_zhao) <- "celltype"
+
+```
+
+Extract RNA expression
+```{r}
+## 如果 RNA data layer 还没有 normalized data，先 NormalizeData
+Palate_zhao <- NormalizeData(
+  Palate_zhao,
+  assay = "RNA",
+  verbose = FALSE
+)
+
+exp_mat <- GetAssayData(
+  object = Palate_zhao,
+  assay = "RNA",
+  layer = "data"
+)
+
+exp_mat <- exp_mat[genes_present, , drop = FALSE]
+
+meta_use <- Palate_zhao@meta.data
+meta_use$cell <- rownames(meta_use)
+
+## 对齐 cell
+common_cells <- intersect(colnames(exp_mat), rownames(meta_use))
+
+exp_mat <- exp_mat[, common_cells, drop = FALSE]
+meta_use <- meta_use[common_cells, , drop = FALSE]
+
+meta_use$celltype <- factor(
+  meta_use$celltype,
+  levels = desired_order
+)
+```
+
+Calculate average expression and percent expressed
+```{r}
+dot_df <- lapply(genes_present, function(gene_i) {
+  
+  exp_i <- as.numeric(exp_mat[gene_i, ])
+  
+  data.frame(
+    cell = common_cells,
+    gene = gene_i,
+    expression = exp_i,
+    celltype = meta_use$celltype
+  )
+}) %>%
+  bind_rows() %>%
+  filter(!is.na(celltype)) %>%
+  group_by(celltype, gene) %>%
+  summarise(
+    avg_exp = mean(expression),
+    pct_exp = mean(expression > 0) * 100,
+    .groups = "drop"
+  )
+
+## 按 gene 对 average expression 做 scaling，模拟 Seurat DotPlot 的颜色逻辑
+dot_df <- dot_df %>%
+  group_by(gene) %>%
+  mutate(
+    avg_exp_scaled = as.numeric(scale(avg_exp))
+  ) %>%
+  ungroup()
+
+## 限制极端值，类似 Seurat DotPlot 默认 scale.min / scale.max
+dot_df$avg_exp_scaled[dot_df$avg_exp_scaled > 2.5] <- 2.5
+dot_df$avg_exp_scaled[dot_df$avg_exp_scaled < -2.5] <- -2.5
+
+dot_df$gene <- factor(
+  dot_df$gene,
+  levels = genes_present
+)
+
+dot_df$celltype <- factor(
+  dot_df$celltype,
+  levels = desired_order
+)
+```
+
+Dotplot
+```{r}
+p_dot_Palate_zhao_marker_custom <- ggplot(
+  dot_df,
+  aes(
+    x = gene,
+    y = celltype
+  )
+) +
+  geom_point(
+    aes(
+      size = pct_exp,
+      color = avg_exp_scaled
+    )
+  ) +
+  scale_size(
+    range = c(0, 6),
+    limits = c(0, 100),
+    breaks = c(0, 25, 50, 75, 100),
+    name = "Percent\nExpressed"
+  ) +
+  scale_color_gradientn(
+    values = seq(0, 1, 0.2),
+    colours = c("#295B9F", "#FFFFFF", "#D23B3E"),
+    name = "Average\nExpression"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 0.5,
+      vjust = 0.5
+    ),
+    axis.text.y = element_text(size = 11),
+    panel.border = element_blank(),
+    axis.line.x = element_line(color = "black"),
+    axis.line.y = element_blank()
+  ) +
+  labs(x = NULL, y = NULL) +
+  guides(
+    size = guide_legend(order = 3),
+    color = guide_colorbar(order = 1)
+  )
+
+p_dot_Palate_zhao_marker_custom
+```
+```{r}
+dir.create("./OutputFigure", showWarnings = FALSE, recursive = TRUE)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_celltype_marker_dotplot_RNA.pdf",
+  plot = p_dot_Palate_zhao_marker_custom,
+  width = 9,
+  height = 5
+)
+```
+
+
+#3 Subset Epithelial cells
+```{r}
+DefaultAssay(Palate_zhao) <- "RNA"
+
+Palate_zhao$Stage <- case_when(
+  Palate_zhao$orig.ident %in% c("Zhao_E125-1", "Zhao_E125-2") ~ "E12.5",
+  Palate_zhao$orig.ident %in% c("Zhao_E135-1", "Zhao_E135-2", "Zhao_E135-3") ~ "E13.5",
+  Palate_zhao$orig.ident %in% c("Zhao_E140-1", "Zhao_E140-2") ~ "E14.0",
+  Palate_zhao$orig.ident %in% c("Zhao_E145-1", "Zhao_E145-2") ~ "E14.5",
+  TRUE ~ NA_character_
+)
+
+Palate_zhao$Dataset <- "Zhao"
+Palate_zhao$SampleID <- Palate_zhao$orig.ident
+
+Palate_zhao_epi <- subset(
+  Palate_zhao,
+  subset = celltype == "Epithelial"
+)
+
+Palate_zhao_epi$Anatomy <- "palatal_epithelium"
+```
+
+
+# 4 Remove ATAC and other unwanted metadata
+```{r}
+DefaultAssay(Palate_zhao_epi) <- "RNA"
+
+if ("ATAC" %in% names(Palate_zhao_epi@assays)) {
+  Palate_zhao_epi[["ATAC"]] <- NULL
+}
+
+Palate_zhao_epi@reductions <- list()
+Palate_zhao_epi@graphs <- list()
+Palate_zhao_epi@neighbors <- list()
+```
+
+
+
+
+
+# 5 SubCluster epithelial cells after harmony
+## 5.1 SCT
+```{r}
+DefaultAssay(Palate_zhao_epi) <- "RNA"
+
+# 如果还没有 percent.mt，先计算
+if (!"percent.mt" %in% colnames(Palate_zhao_epi@meta.data)) {
+  Palate_zhao_epi[["percent.mt"]] <- PercentageFeatureSet(
+    Palate_zhao_epi,
+    pattern = "^mt-"
+  )
+}
+
+summary(Palate_zhao_epi$percent.mt)
+sum(is.na(Palate_zhao_epi$percent.mt))
+
+Palate_zhao_epi <- SCTransform(
+  Palate_zhao_epi,
+  assay = "RNA",
+  new.assay.name = "SCT",
+  vars.to.regress = "percent.mt",
+  verbose = FALSE
+)
+```
+
+
+```{r}
+DefaultAssay(Palate_zhao_epi) <- "SCT"
+
+Palate_zhao_epi <- RunPCA(
+  Palate_zhao_epi,
+  npcs = 50,
+  features = VariableFeatures(Palate_zhao_epi)
+)
+```
+
+## 5.2 Harmony
+```{r}
+system.time({
+  Palate_zhao_epi <- RunHarmony(
+    object = Palate_zhao_epi,
+    assay.use = "SCT",
+    reduction.use = "pca",
+    dims.use = 1:50,
+    group.by.vars = "orig.ident",
+    plot_convergence = TRUE
+  )
+})
+```
+
+## 5.3 Check for stage
+```{r}
+table(Palate_zhao_epi$orig.ident, Palate_zhao_epi$Stage)
+```
+
+```{r, fig.height=5, fig.width= 20}
+FeaturePlot(
+  Palate_zhao_epi,
+  features = "Krt14",
+  split.by = "Stage"
+)
+```
+
+```{r, fig.height=5, fig.width= 20}
+FeaturePlot(
+  Palate_zhao_epi,
+  features = "Krt5",
+  split.by = "Stage"
+)
+```
+
+```{r, fig.height=5, fig.width= 20}
+FeaturePlot(
+  Palate_zhao_epi,
+  features = "Krt6a",
+  split.by = "Stage"
+)
+```
+
+```{r,fig.width=15,fig.height=15}
+FeaturePlot(Palate_zhao_epi, 
+                  features = c("Krt14","Krt5","Krt6a","Krt4","Krt17"),
+                  cols = c("grey85", brewer.pal(9,"YlOrRd")),
+                  ncol=2, 
+                  pt.size = 0.1,
+                  min.cutoff = 0.1,
+                  max.cutoff =5,
+            label=T,repel = T)
+
+```
+
+## 5.4 Dimension reduction
+```{r}
+Palate_zhao_epi <- RunUMAP(
+  object = Palate_zhao_epi,
+  assay = "SCT",
+  reduction = "harmony",
+  dims = 1:50
+)
+
+Palate_zhao_epi <- FindNeighbors(
+  object = Palate_zhao_epi,
+  assay = "SCT",
+  reduction = "harmony",
+  dims = 1:50
+)
+```
+
+```{r}
+Palate_zhao_epi.resolution <- FindClusters(
+  Palate_zhao_epi,
+  dims = 1:50,
+  graph.name = "SCT_snn",
+  resolution = seq(from = 0, by = .2, length = 10)
+)
+```
+
+```{r}
+clustree(Palate_zhao_epi.resolution)
+```
+
+```{r}
+DimPlot(
+  Palate_zhao_epi.resolution,
+  reduction = "umap",
+  label = TRUE,
+  group.by = "SCT_snn_res.0.2"
+)
+
+DimPlot(
+  Palate_zhao_epi.resolution,
+  reduction = "umap",
+  label = TRUE,
+  group.by = "SCT_snn_res.0.4"
+)
+
+DimPlot(
+  Palate_zhao_epi.resolution,
+  reduction = "umap",
+  label = TRUE,
+  group.by = "SCT_snn_res.0.6"
+)
+
+DimPlot(
+  Palate_zhao_epi.resolution,
+  reduction = "umap",
+  label = TRUE,
+  group.by = "SCT_snn_res.0.8"
+)
+```
+
+Test Featureplot
+```{r,fig.width=15,fig.height=15}
+FeaturePlot(Palate_zhao_epi, 
+                  features = c("Krt14","Krt5","Krt6a","Krt4","Krt17"),
+                  cols = c("grey85", brewer.pal(9,"YlOrRd")),
+                  ncol=2, 
+                  pt.size = 0.1,
+                  min.cutoff = 0.1,
+                  max.cutoff =5,
+            label=T,repel = T)
+
+```
+We choose 0.8 for reduction
+```{r}
+Palate_zhao_epi <- FindClusters(
+  object = Palate_zhao_epi,
+  graph.name = "SCT_snn",
+  resolution = 0.8
+)
+
+```
+
+## 5.5 UMAP plot for palate_epi (Fig1a and Supp Fig1c)
+```{r}
+# 设置 SCT assay
+DefaultAssay(Palate_zhao_epi) <- "SCT"
+
+# 设置细胞类型为身份
+Idents(Palate_zhao_epi) <- Palate_zhao_epi$Celltype
+
+
+# group_by_celltype
+plot1 <- DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE
+)
+
+# group_by_orig.ident
+plot2 <- DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  group.by = "orig.ident"
+)
+
+# group_by_Stage
+plot3 <- DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  group.by = "Stage"
+)
+
+# split_by_orig.ident
+plot4 <- DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE,
+  split.by = "orig.ident"
+)
+
+# split_by_Stage
+plot5 <- DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE,
+  split.by = "Stage"
+)
+
+# combine: celltype + orig.ident + Stage
+plotc <- plot1 + plot2 + plot3
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_umap_harmony_celltype_origident_Stage.pdf",
+  plot = plotc,
+  width = 30,
+  height = 10
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_umap_harmony_split_by_origident.pdf",
+  plot = plot4,
+  width = 24,
+  height = 10
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_umap_harmony_split_by_Stage.pdf",
+  plot = plot5,
+  width = 16,
+  height = 10
+)
+
+# 单独查看
+DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  label = TRUE,
+  repel = TRUE
+)
+
+DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  group.by = "orig.ident"
+)
+
+DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  pt.size = 0.01,
+  group.by = "Stage"
+)
+```
+# 6 PE celltype association and marker genes identification
+## 6.1 Celltype association
+merge clusters 
+```{r}
+DefaultAssay(Palate_zhao_epi) <- "SCT"
+# remove previous celltype metadata
+Palate_zhao_epi$celltype <- NULL
+# Use resolution 0.8 as identity
+Idents(Palate_zhao_epi) <- "SCT_snn_res.0.8"
+
+# Check current clusters
+table(Idents(Palate_zhao_epi))
+
+# Remove cluster 16 before celltype assignment
+Palate_zhao_epi <- subset(
+  Palate_zhao_epi,
+  idents = "16",
+  invert = TRUE
+)
+
+# Check cluster 16 has been removed
+table(Idents(Palate_zhao_epi))
+```
+```{r}
+# Make sure identity is still SCT_snn_res.0.8
+Idents(Palate_zhao_epi) <- "SCT_snn_res.0.8"
+
+# Initialize Celltype
+Palate_zhao_epi$Celltype <- NA_character_
+
+# Assign Celltype based on SCT_snn_res.0.8
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "0"]  <- "PE0"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "1"]  <- "PE1"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "2"]  <- "PE2"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "4"]  <- "PE3"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "5"]  <- "PE4"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "6"]  <- "PE5"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "7"]  <- "PE6"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "8"]  <- "PE7"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "9"]  <- "PE8"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "10"] <- "PE1"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "11"] <- "PE9"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "12"] <- "PE10"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "13"] <- "PE11"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "14"] <- "PE12"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "17"] <- "PE9"
+Palate_zhao_epi$Celltype[Palate_zhao_epi$SCT_snn_res.0.8 == "18"] <- "PE11"
+
+# Set order
+Palate_zhao_epi$Celltype <- factor(
+  Palate_zhao_epi$Celltype,
+  levels = c(
+    "PE0", "PE1", "PE2", "PE3", "PE4", "PE5", "PE6",
+    "PE7", "PE8", "PE9", "PE10", "PE11", "PE12"
+  )
+)
+
+# Check assignment
+table(Palate_zhao_epi$SCT_snn_res.0.8, Palate_zhao_epi$Celltype, useNA = "ifany")
+table(Palate_zhao_epi$Celltype, useNA = "ifany")
+```
+```{r}
+DimPlot(
+  Palate_zhao_epi,
+  reduction = "umap",
+  group.by = "Celltype",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.1
+)
+```
+
+## 6.2 Marker genes identification
+```{r}
+
+# Use merged Celltype for marker identification
+Idents(Palate_zhao_epi) <- "Celltype"
+
+# Check celltype numbers
+table(Idents(Palate_zhao_epi))
+table(Palate_zhao_epi$Celltype, useNA = "ifany")
+
+# Perform DE using RNA rather than SCT
+DefaultAssay(Palate_zhao_epi) <- "RNA"
+
+# Normalize RNA data if necessary
+Palate_zhao_epi <- NormalizeData(Palate_zhao_epi)
+
+# Scale RNA data
+all.genes <- rownames(Palate_zhao_epi)
+
+Palate_zhao_epi <- ScaleData(
+  Palate_zhao_epi,
+  features = all.genes
+)
+
+# Identify positive marker genes by Celltype
+Palate_zhao_epi_Celltype_markers <- FindAllMarkers(
+  object = Palate_zhao_epi,
+  only.pos = TRUE,
+  min.pct = 0.25,
+  logfc.threshold = 0.25
+)
+
+# Top 10 markers per Celltype
+top10_Celltype <- Palate_zhao_epi_Celltype_markers %>%
+  group_by(cluster) %>%
+  slice_max(
+    order_by = avg_log2FC,
+    n = 10,
+    with_ties = FALSE
+  ) %>%
+  ungroup()
+
+# Top 6 markers using scCustomize
+top6_Celltype_markers <- Extract_Top_Markers(
+  marker_dataframe = Palate_zhao_epi_Celltype_markers,
+  num_genes = 6,
+  named_vector = FALSE,
+  make_unique = TRUE
+)
+```
+
+```{r}
+write.csv(
+  Palate_zhao_epi_Celltype_markers,
+  file = "./OutputTable/Palate_zhao_epi_Celltype_markers.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  top10_Celltype,
+  file = "./OutputTable/Palate_zhao_epi_Celltype_top10_markers.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  top6_Celltype_markers,
+  file = "./OutputTable/Palate_zhao_epi_Celltype_top6_markers.csv",
+  row.names = FALSE
+)
+```
+
+```{r}
+Idents(Palate_zhao_epi) <- "Celltype"
+DefaultAssay(Palate_zhao_epi) <- "RNA"
+
+p_heatmap_Celltype <- DoHeatmap(
+  Palate_zhao_epi,
+  features = unique(top10_Celltype$gene),
+  group.by = "Celltype"
+)
+
+p_heatmap_Celltype
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_markers_top10_heatmap.pdf",
+  plot = p_heatmap_Celltype,
+  device = "pdf",
+  width = 30,
+  height = 40,
+  units = "cm"
+)
+```
+
+## 6.3 Celltype marker genes FeaturePlot
+```{r}
+top5_Celltype <- Palate_zhao_epi_Celltype_markers %>%
+  group_by(cluster) %>%
+  slice_max(
+    order_by = avg_log2FC,
+    n = 5,
+    with_ties = FALSE
+  ) %>%
+  ungroup()
+
+write.csv(
+  top5_Celltype,
+  file = "./OutputTable/Palate_zhao_epi_Celltype_top5_markers.csv",
+  row.names = FALSE
+)
+```
+
+
+```{r}
+plot_top5_marker_with_highlight_Celltype <- function(
+    obj,
+    marker_df,
+    assay_use = "RNA",
+    celltype_col = "Celltype",
+    output_prefix = "Palate_zhao_epi_Celltype"
+) {
+  
+  DefaultAssay(obj) <- assay_use
+  Idents(obj) <- celltype_col
+  
+  celltype_use <- unique(as.character(marker_df$cluster))
+  celltype_use <- celltype_use[
+    order(as.numeric(gsub("PE", "", celltype_use)))
+  ]
+  
+  for (i_chr in celltype_use) {
+    
+    genes_to_plot <- marker_df$gene[as.character(marker_df$cluster) == i_chr]
+    genes_to_plot <- unique(genes_to_plot)
+    genes_to_plot <- genes_to_plot[genes_to_plot %in% rownames(obj[[assay_use]])]
+    
+    cells_i <- WhichCells(obj, idents = i_chr)
+    
+    if (length(genes_to_plot) > 0 && length(cells_i) > 0) {
+      
+      p_highlight <- DimPlot(
+        obj,
+        reduction = "umap",
+        cells.highlight = list(cells_i),
+        cols = "grey85",
+        cols.highlight = "#D23B3E",
+        pt.size = 0.1,
+        sizes.highlight = 0.25
+      ) +
+        ggtitle(paste0("Highlight: ", i_chr)) +
+        NoLegend() +
+        theme(
+          plot.title = element_text(hjust = 0.5, face = "bold")
+        )
+      
+      p_features <- FeaturePlot(
+        obj,
+        features = genes_to_plot,
+        reduction = "umap",
+        cols = c("grey85", brewer.pal(9, "YlOrRd")),
+        pt.size = 0.1,
+        order = TRUE,
+        combine = FALSE
+      )
+      
+      p_features <- lapply(
+        seq_along(p_features),
+        function(j) {
+          p_features[[j]] +
+            ggtitle(genes_to_plot[j]) +
+            theme(
+              plot.title = element_text(hjust = 0.5, face = "bold")
+            )
+        }
+      )
+      
+      p_all <- wrap_plots(
+        c(list(p_highlight), p_features),
+        ncol = 2
+      ) +
+        plot_annotation(
+          title = paste0(
+            "Top 5 marker genes in ",
+            i_chr,
+            " (",
+            assay_use,
+            ")"
+          )
+        )
+      
+      print(p_all)
+      
+      ggsave(
+        filename = paste0(
+          "./OutputFigure/",
+          output_prefix,
+          "_",
+          i_chr,
+          "_top5_marker_plus_highlight_",
+          assay_use,
+          ".pdf"
+        ),
+        plot = p_all,
+        width = 10,
+        height = 12
+      )
+      
+    } else {
+      print(paste("No genes or no cells to plot for", i_chr))
+    }
+  }
+}
+```
+
+```{r}
+plot_top5_marker_with_highlight_Celltype(
+  obj = Palate_zhao_epi,
+  marker_df = top5_Celltype,
+  assay_use = "RNA",
+  celltype_col = "Celltype",
+  output_prefix = "Palate_zhao_epi_Celltype"
+)
+```
+
+```{r}
+plot_top5_marker_with_highlight_Celltype(
+  obj = Palate_zhao_epi,
+  marker_df = top5_Celltype,
+  assay_use = "SCT",
+  celltype_col = "Celltype",
+  output_prefix = "Palate_zhao_epi_Celltype"
+)
+```
+
+## 6.4 Celltype marker genes Dotplot (Supp Fig1d)
+Set genes of interest
+```{r}
+## 1. Set marker genes
+genes_to_check <- c(
+  "Cacna1e", "Fstl4",       # PE0
+  "Nell2", "Unc13c",        # PE1
+  "Krt6a", "Zfp750",        # PE2
+  "Pif1", "Ube2c",          # PE3
+  "Maf", "Dab1",            # PE4
+  "H2ac10", "H2bc18",       # PE5
+  "Abi3bp", "Ccdc3",        # PE6
+  "Bmper", "Sostdc1",       # PE7
+  "Olfm5", "Tspan8",        # PE8
+  "Rp1", "Zbbx",            # PE9
+  "Ccnb2", "Knstrn",        # PE10
+  "Prdm16", "Rarb",         # PE11
+  "Nrarp", "Palm3"          # PE12
+)
+
+genes_to_check <- unique(genes_to_check)
+
+## 2. Check if genes exist
+DefaultAssay(Palate_zhao_epi) <- "SCT"
+
+genes_present <- genes_to_check[genes_to_check %in% rownames(Palate_zhao_epi)]
+genes_missing <- genes_to_check[!genes_to_check %in% rownames(Palate_zhao_epi)]
+
+genes_present
+genes_missing
+```
+Set Celltype order
+```{r}
+## =========================================================
+## Set Celltype order
+## =========================================================
+
+desired_order <- rev(paste0("PE", 0:12))
+
+Palate_zhao_epi$Celltype <- factor(
+  Palate_zhao_epi$Celltype,
+  levels = desired_order
+)
+
+Idents(Palate_zhao_epi) <- "Celltype"
+
+table(Idents(Palate_zhao_epi))
+```
+Extract SCT expression matrix
+```{r}
+## =========================================================
+## Extract SCT expression matrix
+## =========================================================
+
+exp_mat <- GetAssayData(
+  object = Palate_zhao_epi,
+  assay = "SCT",
+  layer = "data"
+)
+
+exp_mat <- exp_mat[genes_present, , drop = FALSE]
+
+meta_use <- Palate_zhao_epi@meta.data
+meta_use$cell <- rownames(meta_use)
+
+## 对齐 cell
+common_cells <- intersect(colnames(exp_mat), rownames(meta_use))
+
+exp_mat <- exp_mat[, common_cells, drop = FALSE]
+meta_use <- meta_use[common_cells, , drop = FALSE]
+
+meta_use$Celltype <- factor(
+  meta_use$Celltype,
+  levels = desired_order
+)
+```
+
+Calculate average expression and percent expressed
+```{r}
+## =========================================================
+## Calculate average expression and percent expressed
+## =========================================================
+
+dot_df <- lapply(genes_present, function(gene_i) {
+  
+  exp_i <- as.numeric(exp_mat[gene_i, ])
+  
+  data.frame(
+    cell = common_cells,
+    gene = gene_i,
+    expression = exp_i,
+    Celltype = meta_use$Celltype
+  )
+}) %>%
+  bind_rows() %>%
+  filter(!is.na(Celltype)) %>%
+  group_by(Celltype, gene) %>%
+  summarise(
+    avg_exp = mean(expression),
+    pct_exp = mean(expression > 0) * 100,
+    .groups = "drop"
+  )
+
+## 按 gene 对 average expression 做 scaling，模拟 Seurat DotPlot 颜色逻辑
+dot_df <- dot_df %>%
+  group_by(gene) %>%
+  mutate(
+    avg_exp_scaled = as.numeric(scale(avg_exp))
+  ) %>%
+  ungroup()
+
+## 如果某个 gene 在所有 Celltype 平均值完全一样，scale 会产生 NA，改成 0
+dot_df$avg_exp_scaled[is.na(dot_df$avg_exp_scaled)] <- 0
+
+## 限制极端值
+dot_df$avg_exp_scaled[dot_df$avg_exp_scaled > 2.5] <- 2.5
+dot_df$avg_exp_scaled[dot_df$avg_exp_scaled < -2.5] <- -2.5
+
+dot_df$gene <- factor(
+  dot_df$gene,
+  levels = genes_present
+)
+
+dot_df$Celltype <- factor(
+  dot_df$Celltype,
+  levels = desired_order
+)
+```
+
+Dotplot
+```{r}
+## =========================================================
+## DotPlot
+## =========================================================
+
+p_dot_Palate_zhao_epi_marker_custom <- ggplot(
+  dot_df,
+  aes(
+    x = gene,
+    y = Celltype
+  )
+) +
+  geom_point(
+    aes(
+      size = pct_exp,
+      color = avg_exp_scaled
+    )
+  ) +
+  scale_size(
+    range = c(0, 6),
+    limits = c(0, 100),
+    breaks = c(0, 25, 50, 75, 100),
+    name = "Percent\nExpressed"
+  ) +
+  scale_color_gradientn(
+    values = seq(0, 1, 0.2),
+    colours = c("#295B9F", "#FFFFFF", "#D23B3E"),
+    name = "Average\nExpression"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 0.5,
+      vjust = 0.5
+    ),
+    axis.text.y = element_text(size = 11),
+    panel.border = element_blank(),
+    axis.line.x = element_line(color = "black"),
+    axis.line.y = element_blank()
+  ) +
+  labs(x = NULL, y = NULL) +
+  guides(
+    size = guide_legend(order = 3),
+    color = guide_colorbar(order = 1)
+  )
+
+p_dot_Palate_zhao_epi_marker_custom
+```
+Save
+```{r}
+dir.create("./OutputFigure", showWarnings = FALSE, recursive = TRUE)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_marker_dotplot_SCT_custom.pdf",
+  plot = p_dot_Palate_zhao_epi_marker_custom,
+  width = 8.5,
+  height = 5
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_marker_dotplot_SCT_custom.png",
+  plot = p_dot_Palate_zhao_epi_marker_custom,
+  width = 8.5,
+  height = 5,
+  dpi = 300
+)
+```
+
+
+Then I need to add the basal progenitor markers in embryonic skin scRNA
+
+
+```{r}
+Palate_zhao_epi <- readRDS( file = "./SeuratObject/Palate_zhao_epi_remove_cluster16_Celltype_marker_analysis.rds")
+```
+Set genes of interest
+```{r}
+## 1. Set marker genes
+genes_to_check <- c(
+  # PE0
+  "Cacna1e", "Fstl4",
+  
+  # PE1
+  "Nell2", "Unc13c",
+  
+  # PE2 / periderm
+  "Krt6a", "Zfp750",
+  
+  # PE3
+  "Pif1", "Ube2c",
+  
+  # PE4
+  "Maf", "Dab1",
+  
+  # PE5
+  "H2ac10", "H2bc18",
+  
+  # PE6
+  "Abi3bp", "Ccdc3",
+  
+  # PE7
+  "Bmper", "Sostdc1",
+  
+  # PE8
+  "Olfm5", "Tspan8",
+  
+  # PE9
+  "Rp1", "Zbbx",
+  
+  # PE10
+  "Ccnb2", "Knstrn",
+  
+  # PE11
+  "Prdm16", "Rarb",
+  
+  # PE12
+  "Nrarp", "Palm3",
+  
+  # Jacob et al. BasalTagln-associated genes
+  "C1qtnf3", "Hapln1", "Tagln", "Cldn11",
+  "Amtn", "Myl9", "Bambi", "Wnt2", "Wnt3a", "Wnt4", "Wnt6"
+)
+
+genes_to_check <- unique(genes_to_check)
+
+## 2. Check if genes exist
+DefaultAssay(Palate_zhao_epi) <- "SCT"
+
+genes_present <- genes_to_check[genes_to_check %in% rownames(Palate_zhao_epi)]
+genes_missing <- genes_to_check[!genes_to_check %in% rownames(Palate_zhao_epi)]
+
+genes_present
+genes_missing
+```
+Set Celltype order
+```{r}
+## =========================================================
+## Set Celltype order
+## =========================================================
+
+desired_order <- rev(paste0("PE", 0:12))
+
+Palate_zhao_epi$Celltype <- factor(
+  Palate_zhao_epi$Celltype,
+  levels = desired_order
+)
+
+Idents(Palate_zhao_epi) <- "Celltype"
+
+table(Idents(Palate_zhao_epi))
+```
+Extract SCT expression matrix
+```{r}
+## =========================================================
+## Extract SCT expression matrix
+## =========================================================
+
+exp_mat <- GetAssayData(
+  object = Palate_zhao_epi,
+  assay = "SCT",
+  layer = "data"
+)
+
+exp_mat <- exp_mat[genes_present, , drop = FALSE]
+
+meta_use <- Palate_zhao_epi@meta.data
+meta_use$cell <- rownames(meta_use)
+
+## 对齐 cell
+common_cells <- intersect(colnames(exp_mat), rownames(meta_use))
+
+exp_mat <- exp_mat[, common_cells, drop = FALSE]
+meta_use <- meta_use[common_cells, , drop = FALSE]
+
+meta_use$Celltype <- factor(
+  meta_use$Celltype,
+  levels = desired_order
+)
+```
+
+Calculate average expression and percent expressed
+```{r}
+## =========================================================
+## Calculate average expression and percent expressed
+## =========================================================
+
+dot_df <- lapply(genes_present, function(gene_i) {
+  
+  exp_i <- as.numeric(exp_mat[gene_i, ])
+  
+  data.frame(
+    cell = common_cells,
+    gene = gene_i,
+    expression = exp_i,
+    Celltype = meta_use$Celltype
+  )
+}) %>%
+  bind_rows() %>%
+  filter(!is.na(Celltype)) %>%
+  group_by(Celltype, gene) %>%
+  summarise(
+    avg_exp = mean(expression),
+    pct_exp = mean(expression > 0) * 100,
+    .groups = "drop"
+  )
+
+## 按 gene 对 average expression 做 scaling，模拟 Seurat DotPlot 颜色逻辑
+dot_df <- dot_df %>%
+  group_by(gene) %>%
+  mutate(
+    avg_exp_scaled = as.numeric(scale(avg_exp))
+  ) %>%
+  ungroup()
+
+## 如果某个 gene 在所有 Celltype 平均值完全一样，scale 会产生 NA，改成 0
+dot_df$avg_exp_scaled[is.na(dot_df$avg_exp_scaled)] <- 0
+
+## 限制极端值
+dot_df$avg_exp_scaled[dot_df$avg_exp_scaled > 2.5] <- 2.5
+dot_df$avg_exp_scaled[dot_df$avg_exp_scaled < -2.5] <- -2.5
+
+dot_df$gene <- factor(
+  dot_df$gene,
+  levels = genes_present
+)
+
+dot_df$Celltype <- factor(
+  dot_df$Celltype,
+  levels = desired_order
+)
+```
+
+Dotplot
+```{r}
+## =========================================================
+## DotPlot
+## =========================================================
+
+p_dot_Palate_zhao_epi_marker_custom <- ggplot(
+  dot_df,
+  aes(
+    x = gene,
+    y = Celltype
+  )
+) +
+  geom_point(
+    aes(
+      size = pct_exp,
+      color = avg_exp_scaled
+    )
+  ) +
+  scale_size(
+    range = c(0, 6),
+    limits = c(0, 100),
+    breaks = c(0, 25, 50, 75, 100),
+    name = "Percent\nExpressed"
+  ) +
+  scale_color_gradientn(
+    values = seq(0, 1, 0.2),
+    colours = c("#295B9F", "#FFFFFF", "#D23B3E"),
+    name = "Average\nExpression"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 0.5,
+      vjust = 0.5
+    ),
+    axis.text.y = element_text(size = 11),
+    panel.border = element_blank(),
+    axis.line.x = element_line(color = "black"),
+    axis.line.y = element_blank()
+  ) +
+  labs(x = NULL, y = NULL) +
+  guides(
+    size = guide_legend(order = 3),
+    color = guide_colorbar(order = 1)
+  )
+
+p_dot_Palate_zhao_epi_marker_custom
+```
+Save
+```{r}
+dir.create("./OutputFigure", showWarnings = FALSE, recursive = TRUE)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_marker_w_embryonic_skin_progenitor_markers_dotplot_SCT_custom.pdf",
+  plot = p_dot_Palate_zhao_epi_marker_custom,
+  width = 10,
+  height = 5
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_marker_w_embryonic_skin_progenitor_markers_dotplot_SCT_custom.png",
+  plot = p_dot_Palate_zhao_epi_marker_custom,
+  width = 10,
+  height = 5,
+  dpi = 300
+)
+```
+
+
+# 7 PE cell percentage changes (Supp Fig1e)
+
+```{r}
+## 设置顺序
+Palate_zhao_epi$Stage <- factor(
+  Palate_zhao_epi$Stage,
+  levels = c("E12.5", "E13.5", "E14.0", "E14.5")
+)
+
+Palate_zhao_epi$Celltype <- factor(
+  Palate_zhao_epi$Celltype,
+  levels = paste0("PE", 12:0)
+)
+
+## 计算每个 Stage 内不同 Celltype 的百分比
+celltype_stage_percent <- Palate_zhao_epi@meta.data %>%
+  filter(!is.na(Stage), !is.na(Celltype)) %>%
+  count(Stage, Celltype, name = "cell_number") %>%
+  complete(
+    Stage,
+    Celltype,
+    fill = list(cell_number = 0)
+  ) %>%
+  group_by(Stage) %>%
+  mutate(
+    stage_total = sum(cell_number),
+    percentage = cell_number / stage_total * 100
+  ) %>%
+  ungroup()
+
+celltype_stage_percent
+
+write.csv(
+  celltype_stage_percent,
+  file = "./OutputTable/Palate_zhao_epi_Celltype_percentage_by_Stage_barplot_rawdata.csv",
+  row.names = FALSE
+)
+```
+
+
+Barplot to show cell percentage changes through time
+
+```{r}
+p_celltype_percent_stage_dodge <- ggplot(
+  celltype_stage_percent,
+  aes(
+    x = Celltype,
+    y = percentage,
+    fill = Stage
+  )
+) +
+  geom_bar(
+    stat = "identity",
+    position = position_dodge(width = 0.8),
+    width = 0.7,
+    color = "black",
+    linewidth = 0.2
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  labs(
+    x = "Celltype",
+    y = "Percentage within each stage",
+    fill = "Stage"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "right"
+  )
+
+p_celltype_percent_stage_dodge
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_percentage_by_Stage_dodge_barplot.pdf",
+  plot = p_celltype_percent_stage_dodge,
+  width = 10,
+  height = 3,
+  units = "in"
+)
+
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_Celltype_percentage_by_Stage_dodge_barplot.png",
+  plot = p_celltype_percent_stage_dodge,
+  width = 10,
+  height = 3,
+  units = "in",
+  dpi = 300
+)
+```
+
+#8 Slingshot pseudotime trajectories
+## 8.1 Generate slingshot object
+```{r}
+Palate_zhao_epi.sc <- as.SingleCellExperiment(Palate_zhao_epi)
+table(Palate_zhao_epi.sc$ident)
+reducedDim(Palate_zhao_epi.sc, "UMAP") <- Embeddings(Palate_zhao_epi, "umap")
+sce <- slingshot(Palate_zhao_epi.sc, clusterLabels = Palate_zhao_epi.sc$ident, reducedDim = "UMAP", allow.breaks = FALSE)
+
+sce
+```
+
+```{r}
+sce <- slingshot(
+  Palate_zhao_epi.sc,
+  clusterLabels = Palate_zhao_epi.sc$ident,
+  reducedDim = "UMAP",
+  end.clus = "PE2",
+  allow.breaks = FALSE
+)
+slingLineages(sce) 
+```
+
+$Lineage1 [1] "PE12" "PE2"
+$Lineage2 [1] "PE4", "PE1", "PE6", "PE11", "PE8", "PE2"
+
+From the above interpretation, there are two trajectories towards PE2 (periderm)
+
+Now plot Fig 1b
+## 8.2 Plot Fig1b
+
+Define function for trajectory ploting
+```{r}
+plot_slingshot_lineage <- function(
+    lineage_index,
+    lineage_title,
+    sce_object,
+    plot_data,
+    point_size = 0.35,
+    background_size = 0.25,
+    curve_width = 1.2,
+    show_labels = TRUE
+) {
+
+  pt_col <- paste0("Lineage", lineage_index)
+
+  lineage_clusters <- slingLineages(sce_object)[[lineage_index]]
+
+  df <- plot_data
+
+  # 将每条 lineage 的 pseudotime 单独缩放至 0–1
+  df$pseudotime <- df[[pt_col]]
+
+  use_cells <- !is.na(df$pseudotime)
+
+  df$pseudotime_scaled <- NA_real_
+  df$pseudotime_scaled[use_cells] <- scales::rescale(
+    df$pseudotime[use_cells],
+    to = c(0, 1)
+  )
+
+  # 当前 lineage 的 principal curve
+  current_curve <- slingCurves(sce_object)[[lineage_index]]
+
+  curve_xy <- current_curve$s
+
+  # 根据 principal curve 的顺序整理坐标
+  if (!is.null(current_curve$ord)) {
+    curve_xy <- curve_xy[current_curve$ord, , drop = FALSE]
+  }
+
+  curve_df <- data.frame(
+    UMAP_1 = curve_xy[, 1],
+    UMAP_2 = curve_xy[, 2]
+  )
+
+  # 计算需要标注的 cluster 中心位置
+  label_df <- do.call(
+    rbind,
+    lapply(lineage_clusters, function(cl) {
+
+      cells_this_cluster <- df$cluster == cl & use_cells
+
+      if (!any(cells_this_cluster)) {
+        return(NULL)
+      }
+
+      data.frame(
+        cluster = cl,
+        UMAP_1 = median(df$UMAP_1[cells_this_cluster]),
+        UMAP_2 = median(df$UMAP_2[cells_this_cluster])
+      )
+    })
+  )
+
+  p <- ggplot(df, aes(x = UMAP_1, y = UMAP_2)) +
+
+    # 所有细胞作为灰色背景
+    geom_point(
+      color = "grey88",
+      size = background_size
+    ) +
+
+    # 当前 lineage 细胞按 pseudotime 着色
+    geom_point(
+      data = df[use_cells, , drop = FALSE],
+      aes(color = pseudotime_scaled),
+      size = point_size
+    ) +
+
+    # Slingshot 曲线
+    geom_path(
+      data = curve_df,
+      aes(x = UMAP_1, y = UMAP_2),
+      inherit.aes = FALSE,
+      color = "black",
+      linewidth = curve_width,
+      lineend = "round"
+    ) +
+
+    scale_color_viridis_c(
+      option = "D",
+      direction = 1,
+      limits = c(0, 1),
+      breaks = c(0, 0.25, 0.50, 0.75, 1),
+      name = "Pseudotime"
+    ) +
+
+    coord_fixed() +
+
+    labs(
+      title = lineage_title,
+      x = "UMAP_1",
+      y = "UMAP_2"
+    ) +
+
+    theme_classic(base_size = 12) +
+
+    theme(
+      plot.title = element_text(
+        hjust = 0.5,
+        face = "plain",
+        size = 13
+      ),
+      legend.title = element_text(size = 11),
+      legend.text = element_text(size = 9),
+      axis.title = element_text(size = 11)
+    )
+
+  if (show_labels) {
+    p <- p +
+      geom_text(
+        data = label_df,
+        aes(
+          x = UMAP_1,
+          y = UMAP_2,
+          label = cluster
+        ),
+        inherit.aes = FALSE,
+        color = "black",
+        size = 4,
+        fontface = "plain",
+        nudge_y = 0.5
+      )
+  }
+
+  return(p)
+}
+
+```
+Extract UMAP pseudotime and curve
+
+```{r}
+umap_mat <- reducedDim(sce, "UMAP")
+
+pt_mat <- slingPseudotime(sce, na = TRUE)
+curve_list <- slingCurves(sce)
+
+dim(pt_mat)
+colnames(pt_mat)
+slingLineages(sce)
+
+```
+
+```{r}
+plot_df <- data.frame(
+  cell = rownames(umap_mat),
+  UMAP_1 = umap_mat[, 1],
+  UMAP_2 = umap_mat[, 2],
+  cluster = as.character(Palate_zhao_epi.sc$ident),
+  Lineage1 = pt_mat[, 1],
+  Lineage2 = pt_mat[, 2],
+  stringsAsFactors = FALSE
+)
+```
+
+
+```{r}
+p_traj2 <- plot_slingshot_lineage(
+  lineage_index = 1,
+  lineage_title = "Periderm-related trajectory 2",
+  sce_object = sce,
+  plot_data = plot_df
+)
+
+p_traj1 <- plot_slingshot_lineage(
+  lineage_index = 2,
+  lineage_title = "Periderm-related trajectory 1",
+  sce_object = sce,
+  plot_data = plot_df
+)
+
+p_combined <- p_traj1 + p_traj2 +
+  plot_layout(
+    widths = c(1, 1),
+    guides = "collect"
+  ) &
+  theme(
+    legend.position = "right"
+  )
+
+p_combined
+
+ggsave(
+  filename = "./OutputFigure/Palate_zhao_epi_slingshot_two_lineages.pdf",
+  plot = p_combined,
+  width = 10,
+  height = 4.5,
+  useDingbats = FALSE
+)
+```
+
+Modify the combined plot with Adobe Illustrator.
+
+#9 Plot Krt genes (Fig1a)
+
+```{r}
+cutoff_Krt5  <- 0.5
+cutoff_Krt14 <- 0.5
+cutoff_Krt6a <- 1
+
+data_Krt5 <- data_gene[, c("cell", "UMAP_1", "UMAP_2", "Krt5")]
+data_Krt5 <- data_Krt5[data_Krt5$Krt5 > cutoff_Krt5, ]
+
+data_Krt14 <- data_gene[, c("cell", "UMAP_1", "UMAP_2", "Krt14")]
+data_Krt14 <- data_Krt14[data_Krt14$Krt14 > cutoff_Krt14, ]
+
+data_Krt6a <- data_gene[, c("cell", "UMAP_1", "UMAP_2", "Krt6a")]
+data_Krt6a <- data_Krt6a[data_Krt6a$Krt6a > cutoff_Krt6a, ]
+
+point_size_bg <- 0.28
+point_alpha_bg <- 0.35
+
+point_size_Krt14 <- 0.95
+point_alpha_Krt14 <- 0.75
+
+point_size_Krt5 <- 0.90
+point_alpha_Krt5 <- 1.00
+
+point_size_Krt6a <- 0.95
+point_alpha_Krt6a <- 1.00
+
+library(ggplot2)
+library(ggnewscale)
+library(scales)
+
+p_Krt5_Krt14_Krt6a <- ggplot() +
+  ## 背景
+  geom_point(
+    data = data_gene,
+    aes(x = UMAP_1, y = UMAP_2),
+    size = point_size_bg,
+    shape = 16,
+    color = "grey90",
+    alpha = point_alpha_bg
+  ) +
+  
+  ## 先画 Krt14：恢复成明显红色
+  new_scale_color() +
+  geom_point(
+    data = data_Krt14,
+    aes(x = UMAP_1, y = UMAP_2, color = Krt14),
+    shape = 16,
+    size = point_size_Krt14,
+    alpha = point_alpha_Krt14
+  ) +
+  scale_color_gradient(
+    low = "grey85",
+    high = "#006400",
+    limits = c(cutoff_Krt14, 5),
+    oob = scales::squish,
+    name = "Krt14"
+  ) +
+  
+  ## 再画 Krt5：深蓝、更明显
+  new_scale_color() +
+  geom_point(
+    data = data_Krt5,
+    aes(x = UMAP_1, y = UMAP_2, color = Krt5),
+    shape = 16,
+    size = point_size_Krt5,
+    alpha = point_alpha_Krt5
+  ) +
+  scale_color_gradient(
+    low = "grey85",
+    high = "#B30000",
+    limits = c(cutoff_Krt5, 5),
+    oob = scales::squish,
+    name = "Krt5"
+  ) +
+  
+  ## 最后画 Krt6a：深绿、最明显
+  new_scale_color() +
+  geom_point(
+    data = data_Krt6a,
+    aes(x = UMAP_1, y = UMAP_2, color = Krt6a),
+    shape = 16,
+    size = point_size_Krt6a,
+    alpha = point_alpha_Krt6a
+  ) +
+  scale_color_gradient(
+    low = "grey85",
+    high = "#003B8E",
+    limits = c(cutoff_Krt6a, 5),
+    oob = scales::squish,
+    name = "Krt6a"
+  ) +
+  
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.position = "right"
+  ) +
+  labs(
+    x = "UMAP_1",
+    y = "UMAP_2",
+    title = "Krt5, Krt14 and Krt6a expression in Palate_zhao_epi"
+  )
+p_Krt5_Krt14_Krt6a <- p_Krt5_Krt14_Krt6a +
+  coord_fixed()
+
+p_Krt5_Krt14_Krt6a
+```
+
+```{r}
+ggsave(
+  "./OutputFigure/Palate_zhao_epi_SCT_Krt5_Krt14_Krt6a_overlay_UMAP_final.pdf",
+  plot = p_Krt5_Krt14_Krt6a,
+  width = 6,
+  height = 5.5,
+  units = "in"
+)
+```
+
+
+# 0 Save Palate_zhao_epi object
+```{r}
+saveRDS(
+  Palate_zhao_epi,
+  file = "./SeuratObject/Palate_zhao_epi_Celltype_marker_analysis.rds"
+)
+```
+
+# 1 Extract Krt14 and Krt5 expression matrix
+## 9.1 Extract normalized RNA matrix
+```{r}
+genes_use <- c("Krt5", "Krt14")
+
+## 检查 RNA 中是否存在
+DefaultAssay(Palate_zhao_epi) <- "RNA"
+
+genes_use[genes_use %in% rownames(Palate_zhao_epi[["RNA"]])]
+genes_use[!genes_use %in% rownames(Palate_zhao_epi[["RNA"]])]
+```
+
+```{r}
+
+Palate_zhao_epi <- NormalizeData(
+  Palate_zhao_epi,
+  assay = "RNA",
+  verbose = FALSE
+)
+
+## 提取 RNA normalized expression
+expr_RNA <- FetchData(
+  Palate_zhao_epi,
+  vars = genes_use,
+  assay = "RNA",
+  layer = "data"
+)
+
+expr_RNA$cellID <- rownames(expr_RNA)
+
+## 加 metadata
+meta_use <- Palate_zhao_epi@meta.data
+meta_use$cellID <- rownames(meta_use)
+
+cols_meta <- c("cellID", "Celltype", "Stage", "orig.ident")
+cols_meta <- cols_meta[cols_meta %in% colnames(meta_use)]
+
+expr_RNA_out <- expr_RNA %>%
+  left_join(
+    meta_use[, cols_meta, drop = FALSE],
+    by = "cellID"
+  ) %>%
+  select(cellID, Krt5, Krt14, everything())
+
+write.csv(
+  expr_RNA_out,
+  file = "./OutputTable/Palate_zhao_epi_Krt5_Krt14_RNA_expression.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+
+head(expr_RNA_out)
+```
+
+## 9.2 Extract SCT data
+```{r}
+DefaultAssay(Palate_zhao_epi) <- "SCT"
+
+## 检查 SCT 中是否存在
+genes_use[genes_use %in% rownames(Palate_zhao_epi[["SCT"]])]
+genes_use[!genes_use %in% rownames(Palate_zhao_epi[["SCT"]])]
+```
+
+```{r}
+## 提取 SCT data layer expression
+expr_SCT <- FetchData(
+  Palate_zhao_epi,
+  vars = genes_use,
+  assay = "SCT",
+  layer = "data"
+)
+
+expr_SCT$cellID <- rownames(expr_SCT)
+
+expr_SCT_out <- expr_SCT %>%
+  left_join(
+    meta_use[, cols_meta, drop = FALSE],
+    by = "cellID"
+  ) %>%
+  select(cellID, Krt5, Krt14, everything())
+
+write.csv(
+  expr_SCT_out,
+  file = "./OutputTable/Palate_zhao_epi_Krt5_Krt14_SCT_expression.csv",
+  row.names = FALSE,
+  quote = FALSE
+)
+
+head(expr_SCT_out)
+```
+
+
+```{r}
+cor.test(
+  expr_RNA_out$Krt5,
+  expr_RNA_out$Krt14,
+  method = "spearman"
+)
+
+cor.test(
+  expr_SCT_out$Krt5,
+  expr_SCT_out$Krt14,
+  method = "spearman"
+)
+```
+
+

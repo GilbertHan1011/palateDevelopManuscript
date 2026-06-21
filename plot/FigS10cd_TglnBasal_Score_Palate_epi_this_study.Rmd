@@ -1,0 +1,560 @@
+---
+title: "Palate_epi_this_study_plot"
+author: "HuanLiu"
+date: "2026-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1 Load pwd and data
+```{r,load of packages and setup of the environment 1}
+gc()
+rm(list=ls())
+library(Seurat)
+library(data.table)
+library(scales)
+library(plotly)
+library(ggplot2)
+library(slingshot)
+library(magrittr)
+library(dplyr)
+library(tidyverse)
+library(cowplot)
+library(gridExtra)
+library(viridis)
+library(readr)
+library(Hmisc)
+library(ggpubr)
+library(rsample)
+library(tidymodels)
+library(scales)
+library(tradeSeq)
+library(pheatmap)
+library(scCustomize)
+#library(destiny)
+library(plot3D)
+library(rgl)
+library(patchwork)
+library(RColorBrewer)
+
+
+set.seed(12)
+theme_set(theme_bw())
+
+Palate_epi_this_study <- readRDS("./RNA_E12E14_diet.Rds")
+Palate_epi_raw <- readRDS("./RNA_E12E14_diet.Rds")
+
+```
+
+
+Check basic information
+```{r}
+# 基本信息
+Palate_epi_this_study
+dim(Palate_epi_this_study)
+
+# 检查 metadata 字段和 reduction
+"level1_anno" %in% colnames(Palate_epi_this_study@meta.data)
+"scviumap" %in% Reductions(Palate_epi_this_study)
+
+colnames(Palate_epi_this_study@meta.data)
+Reductions(Palate_epi_this_study)
+```
+
+Check celltype/level1_anno
+
+```{r}
+## 精确查看原始 level1_anno 字符串
+unique(Palate_epi_raw$level1_anno)
+dput(unique(as.character(Palate_epi_raw$level1_anno)))
+```
+
+```{r}
+library(stringr)
+
+## 从原始 RDS 恢复 annotation
+Palate_epi_this_study$level1_anno <- 
+  as.character(Palate_epi_raw$level1_anno)
+
+## 清除开头、结尾及连续空格
+Palate_epi_this_study$level1_anno <- str_squish(
+  Palate_epi_this_study$level1_anno
+)
+
+## 查看清理后的标签
+dput(unique(Palate_epi_this_study$level1_anno))
+table(Palate_epi_this_study$level1_anno, useNA = "ifany")
+```
+
+```{r}
+saveRDS(
+  Palate_epi_this_study,
+  "./RNA_E12E14_diet_level1_anno_cleaned.rds"
+)
+```
+
+
+
+
+
+```{r}
+# 去除可能存在的 NA 后，查看细胞类型数目
+level1_celltypes <- unique(
+  na.omit(as.character(Palate_epi_this_study$level1_anno))
+)
+
+length(level1_celltypes)
+sort(level1_celltypes)
+```
+
+
+```{r}
+level1_counts <- Palate_epi_this_study@meta.data %>%
+  count(level1_anno, name = "n_cells") %>%
+  arrange(desc(n_cells))
+
+level1_counts
+```
+
+```{r}
+level1_counts <- Palate_epi_this_study@meta.data %>%
+  count(level1_anno, name = "n_cells") %>%
+  mutate(
+    percentage = 100 * n_cells / sum(n_cells)
+  ) %>%
+  arrange(desc(n_cells))
+
+level1_counts
+```
+```{r}
+sum(level1_counts$n_cells)
+ncol(Palate_epi_this_study)
+```
+
+UMAP plot
+```{r}
+p_level1 <- DimPlot(
+  Palate_epi_this_study,
+  reduction = "scviumap",
+  group.by = "level1_anno",
+  label = TRUE,
+  repel = TRUE,
+  pt.size = 0.3
+) +
+  labs(
+    title = "Palatal epithelial cells from this study",
+    subtitle = "Annotation: level1_anno"
+  ) +
+  theme_classic() +
+  theme(
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.title = element_blank()
+  )
+
+p_level1
+```
+
+# 2 Dotplot for Jacob's basal gene markers
+
+```{r}
+genes_to_check <- c(
+  # Jacob et al. BasalTagln-associated genes
+  "C1qtnf3", "Hapln1", "Tagln", "Cldn11",
+  "Amtn", "Myl9", "Bambi", "Wnt2", "Wnt3a", "Wnt4", "Wnt6"
+)
+
+genes_to_check <- unique(genes_to_check)
+```
+
+```{r}
+display_order <- c(
+  "stem cells",
+  "Transit",
+  "K14(-)",
+  "K5(-)",
+  "Mature K5(-)",
+  "Shh(+)",
+  "K6+ cells"
+)
+
+## ggplot 的 y 轴第一个 level 会显示在最下方，
+## 因此这里反转 levels，使图中从上到下符合 display_order
+desired_order <- rev(display_order)
+
+Palate_epi_this_study$level1_anno <- factor(
+  Palate_epi_this_study$level1_anno,
+  levels = desired_order
+)
+
+Idents(Palate_epi_this_study) <- "level1_anno"
+
+table(Idents(Palate_epi_this_study))
+```
+Extract RNA data
+```{r}
+## =========================================================
+## Extract RNA expression matrix
+## =========================================================
+
+exp_mat <- GetAssayData(
+  object = Palate_epi_this_study,
+  assay = "RNA",
+  layer = "data"
+)
+
+## 必须根据当前实际提取的 RNA data matrix 重新检查
+genes_present <- intersect(
+  genes_to_check,
+  rownames(exp_mat)
+)
+
+genes_missing <- setdiff(
+  genes_to_check,
+  rownames(exp_mat)
+)
+
+cat("Genes present in RNA data layer:\n")
+print(genes_present)
+
+cat("\nGenes missing from RNA data layer:\n")
+print(genes_missing)
+
+## 确认至少有一个基因存在
+if (length(genes_present) == 0) {
+  stop("None of the requested genes were found in the RNA data layer.")
+}
+
+## 按 genes_to_check 中的原始顺序排列
+genes_present <- genes_to_check[
+  genes_to_check %in% rownames(exp_mat)
+]
+
+## 再进行提取
+exp_mat <- exp_mat[
+  genes_present,
+  ,
+  drop = FALSE
+]
+```
+```{r}
+meta_use <- Palate_epi_this_study@meta.data
+
+common_cells <- intersect(
+  colnames(exp_mat),
+  rownames(meta_use)
+)
+
+exp_mat <- exp_mat[, common_cells, drop = FALSE]
+meta_use <- meta_use[common_cells, , drop = FALSE]
+
+meta_use$level1_anno <- factor(
+  meta_use$level1_anno,
+  levels = desired_order
+)
+
+table(meta_use$level1_anno, useNA = "ifany")
+```
+
+
+```{r}
+## =========================================================
+## Calculate average expression and percent expressed
+## =========================================================
+
+dot_df <- lapply(genes_present, function(gene_i) {
+  
+  exp_i <- as.numeric(exp_mat[gene_i, ])
+  
+  data.frame(
+    cell = common_cells,
+    gene = gene_i,
+    expression = exp_i,
+    level1_anno = meta_use$level1_anno
+  )
+}) %>%
+  bind_rows() %>%
+  filter(!is.na(level1_anno)) %>%
+  group_by(level1_anno, gene) %>%
+  summarise(
+    avg_exp = mean(expression),
+    pct_exp = mean(expression > 0) * 100,
+    .groups = "drop"
+  )
+
+## 对每个 gene 的平均表达进行 scaling，
+## 模拟 Seurat DotPlot 的颜色逻辑
+dot_df <- dot_df %>%
+  group_by(gene) %>%
+  mutate(
+    avg_exp_scaled = as.numeric(scale(avg_exp))
+  ) %>%
+  ungroup()
+
+## 若某个基因在所有 cell type 中平均值完全相同，
+## scale() 会产生 NA，将其设为 0
+dot_df$avg_exp_scaled[
+  is.na(dot_df$avg_exp_scaled)
+] <- 0
+
+## 限制极端值
+dot_df$avg_exp_scaled <- pmax(
+  pmin(dot_df$avg_exp_scaled, 2.5),
+  -2.5
+)
+
+## 设置 gene 顺序
+dot_df$gene <- factor(
+  dot_df$gene,
+  levels = genes_present
+)
+
+## 设置细胞类型顺序
+dot_df$level1_anno <- factor(
+  dot_df$level1_anno,
+  levels = desired_order
+)
+```
+
+
+```{r}
+## =========================================================
+## DotPlot
+## =========================================================
+
+p_dot_Palate_epi_this_study_marker_custom <- ggplot(
+  dot_df,
+  aes(
+    x = gene,
+    y = level1_anno
+  )
+) +
+  geom_point(
+    aes(
+      size = pct_exp,
+      color = avg_exp_scaled
+    )
+  ) +
+  scale_size(
+    range = c(0, 6),
+    limits = c(0, 100),
+    breaks = c(0, 25, 50, 75, 100),
+    name = "Percent\nExpressed"
+  ) +
+  scale_color_gradientn(
+    colours = c("#295B9F", "#FFFFFF", "#D23B3E"),
+    values = scales::rescale(c(-2.5, 0, 2.5)),
+    limits = c(-2.5, 2.5),
+    name = "Average\nExpression"
+  ) +
+  theme_bw() +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1,
+      vjust = 1,
+      size = 10
+    ),
+    axis.text.y = element_text(
+      size = 11
+    ),
+    panel.border = element_blank(),
+    axis.line.x = element_line(
+      color = "black"
+    ),
+    axis.line.y = element_blank(),
+    axis.ticks.y = element_blank()
+  ) +
+  labs(
+    x = NULL,
+    y = NULL
+  ) +
+  guides(
+    color = guide_colorbar(order = 1),
+    size = guide_legend(order = 2)
+  )
+
+p_dot_Palate_epi_this_study_marker_custom
+```
+```{r}
+ggsave(
+  "./OutputFigure/Palate_zhao_thi_study_embryonic_skin_progenitor_markers_dotplot.pdf",
+  plot = p_dot_Palate_epi_this_study_marker_custom,
+  width = 5,
+  height = 10
+)
+
+```
+
+# 3 Module score
+```{r}
+DefaultAssay(Palate_epi_this_study) <- "RNA"
+
+## 完整的 Jacob et al. BasalTagln-associated gene set
+jacob_basalTagln_full <- c(
+  "C1qtnf3", "Hapln1", "Tagln", "Cldn11",
+  "Amtn", "Myl9", "Bambi",
+  "Wnt2", "Wnt3a", "Wnt4", "Wnt6"
+)
+
+## 更保守的核心 gene set：
+## 去掉可能在多个 epithelial state 中广泛表达的 Wnt genes
+jacob_basalTagln_core <- c(
+  "C1qtnf3", "Hapln1", "Tagln", "Cldn11",
+  "Amtn", "Myl9", "Bambi"
+)
+```
+
+```{r}
+jacob_full_present <- intersect(
+  jacob_basalTagln_full,
+  rownames(Palate_epi_this_study[["RNA"]])
+)
+
+jacob_core_present <- intersect(
+  jacob_basalTagln_core,
+  rownames(Palate_epi_this_study[["RNA"]])
+)
+
+jacob_full_missing <- setdiff(
+  jacob_basalTagln_full,
+  rownames(Palate_epi_this_study[["RNA"]])
+)
+
+jacob_core_missing <- setdiff(
+  jacob_basalTagln_core,
+  rownames(Palate_epi_this_study[["RNA"]])
+)
+
+cat("Full module genes present:\n")
+print(jacob_full_present)
+
+cat("\nFull module genes missing:\n")
+print(jacob_full_missing)
+
+cat("\nCore module genes present:\n")
+print(jacob_core_present)
+
+cat("\nCore module genes missing:\n")
+print(jacob_core_missing)
+```
+
+```{r}
+## 删除可能存在的旧 module score
+old_score_cols <- grep(
+  "^Jacob_BasalTagln",
+  colnames(Palate_epi_this_study@meta.data),
+  value = TRUE
+)
+
+if (length(old_score_cols) > 0) {
+  Palate_epi_this_study@meta.data[, old_score_cols] <- NULL
+}
+
+set.seed(123)
+
+Palate_epi_this_study <- AddModuleScore(
+  object = Palate_epi_this_study,
+  features = list(jacob_full_present),
+  assay = "RNA",
+  name = "Jacob_BasalTagln_full",
+  ctrl = 100
+)
+
+set.seed(123)
+
+Palate_epi_this_study <- AddModuleScore(
+  object = Palate_epi_this_study,
+  features = list(jacob_core_present),
+  assay = "RNA",
+  name = "Jacob_BasalTagln_core",
+  ctrl = 100
+)
+```
+
+
+```{r}
+grep(
+  "Jacob_BasalTagln",
+  colnames(Palate_epi_this_study@meta.data),
+  value = TRUE
+)
+```
+
+```{r}
+display_order <- c(
+  "stem cells",
+  "Transit",
+  "K14(-)",
+  "K5(-)",
+  "Mature K5(-)",
+  "Shh(+)",
+  "K6+ cells"
+)
+
+Palate_epi_this_study$level1_anno <- str_squish(
+  as.character(Palate_epi_this_study$level1_anno)
+)
+
+## 这里不用 rev，因为后面的 ggplot 可以显式控制显示顺序
+Palate_epi_this_study$level1_anno <- factor(
+  Palate_epi_this_study$level1_anno,
+  levels = display_order
+)
+
+Idents(Palate_epi_this_study) <- "level1_anno"
+```
+
+
+```{r}
+p_full_umap <- FeaturePlot(
+  Palate_epi_this_study,
+  features = "Jacob_BasalTagln_full1",
+  reduction = "scviumap",
+  label = TRUE,
+  pt.size = 0.25,
+  order = TRUE,
+  min.cutoff = "q05",
+  max.cutoff = "q95"
+) +
+  labs(
+    title = "Jacob BasalTagln-associated module"
+  ) +
+  theme(
+    plot.title = element_text(
+      hjust = 0.5,
+      face = "bold"
+    )
+  )
+
+p_full_umap
+```
+
+```{r}
+library(patchwork)
+
+p_umap_vertical <- p_full_umap / p_level1
+
+p_umap_vertical
+```
+
+
+
+```{r}
+ggsave(
+  filename = "./OutputFigure/Jacob_BasalTagln_module_UMAP_vertical.pdf",
+  plot = p_umap_vertical,
+  width = 6,
+  height = 12,
+  units = "in"
+)
+```
+
