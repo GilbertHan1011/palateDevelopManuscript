@@ -1242,6 +1242,9 @@ plot_top5_marker_with_highlight_Celltype(
 ```
 
 ## 6.4 Celltype marker genes Dotplot (Supp Fig1d)
+
+
+
 Set genes of interest
 ```{r}
 ## 1. Set marker genes
@@ -1444,10 +1447,6 @@ ggsave(
 
 Then I need to add the basal progenitor markers in embryonic skin scRNA
 
-
-```{r}
-Palate_zhao_epi <- readRDS( file = "./SeuratObject/Palate_zhao_epi_remove_cluster16_Celltype_marker_analysis.rds")
-```
 Set genes of interest
 ```{r}
 ## 1. Set marker genes
@@ -1490,6 +1489,9 @@ genes_to_check <- c(
   
   # PE12
   "Nrarp", "Palm3",
+  
+  # PE12
+  "Krt5", "Krt14",
   
   # Jacob et al. BasalTagln-associated genes
   "C1qtnf3", "Hapln1", "Tagln", "Cldn11",
@@ -1661,14 +1663,14 @@ Save
 dir.create("./OutputFigure", showWarnings = FALSE, recursive = TRUE)
 
 ggsave(
-  "./OutputFigure/Palate_zhao_epi_Celltype_marker_w_embryonic_skin_progenitor_markers_dotplot_SCT_custom.pdf",
+  "./OutputFigure/Palate_zhao_epi_Celltype_marker_w_embryonic_skin_progenitor_markers_dotplot_SCT_custom_with_k14K5.pdf",
   plot = p_dot_Palate_zhao_epi_marker_custom,
   width = 10,
   height = 5
 )
 
 ggsave(
-  "./OutputFigure/Palate_zhao_epi_Celltype_marker_w_embryonic_skin_progenitor_markers_dotplot_SCT_custom.png",
+  "./OutputFigure/Palate_zhao_epi_Celltype_marker_w_embryonic_skin_progenitor_markers_dotplot_SCT_custom_with_k14K5.png",
   plot = p_dot_Palate_zhao_epi_marker_custom,
   width = 10,
   height = 5,
