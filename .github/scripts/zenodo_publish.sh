@@ -51,18 +51,18 @@ echo ">> Draft ID: ${DRAFT_ID}"
 
 # ---------- 4) Remove any stale files in the draft, then upload ----------
 for f in $(curl -fsS "${API}/records/${DRAFT_ID}/draft/files" "${curl_auth[@]}" \
-             | jq -r '.entries[]?.id // empty'); do
+             | jq -r '.entries[]?.key // empty'); do
   echo ">> Deleting stale file ${f}"
   curl -fsS -X DELETE "${API}/records/${DRAFT_ID}/draft/files/${f}" "${curl_auth[@]}" >/dev/null
 done
 
 INIT=$(curl -fsS -X POST "${API}/records/${DRAFT_ID}/draft/files" "${curl_json[@]}" \
-  -d "{\"name\": \"${ZIP_FILE}\"}")
-curl -fsS -X PUT "$(jq -r .links.content <<<"${INIT}")" \
+  -d "[{\"key\": \"${ZIP_FILE}\"}]")
+curl -fsS -X PUT "$(jq -r '.entries[0].links.content' <<<"${INIT}")" \
   -H "Authorization: Bearer ${ZENODO_TOKEN}" \
   -H "Content-Type: application/octet-stream" \
   --data-binary "@${ZIP_FILE}" >/dev/null
-curl -fsS -X POST "$(jq -r .links.commit <<<"${INIT}")" "${curl_json[@]}" >/dev/null
+curl -fsS -X POST "$(jq -r '.entries[0].links.commit' <<<"${INIT}")" "${curl_json[@]}" >/dev/null
 echo ">> Uploaded ${ZIP_FILE}"
 
 # ---------- 5) Publish (irreversible!) ----------
