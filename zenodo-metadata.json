@@ -1,0 +1,11 @@
+{
+  "title": "palateDevelopManuscript: Processing scripts and code for the palate development manuscript (scRNA-seq & ATAC-seq)",
+  "creators": [
+    { "person_or_org": { "family_name": "Han", "given_name": "Gilbert", "type": "personal" } }
+  ],
+  "description": "<p>Processing scripts, plotting code, and documentation accompanying the palate development manuscript, including basic scRNA-seq and ATAC-seq processing pipelines.</p>",
+  "resource_type": { "id": "software" },
+  "license": { "id": "mit" },
+  "publisher": "Zenodo",
+  "keywords": ["single-cell RNA-seq", "ATAC-seq", "palate development", "bioinformatics"]
+}
