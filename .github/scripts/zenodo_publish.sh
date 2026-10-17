@@ -8,7 +8,7 @@ set -euo pipefail
 #   RECORD_ID     (optional) published record id; empty = create first record
 #   ZENODO_API    (optional) API base, default https://sandbox.zenodo.org/api
 
-API="${ZENODO_API:-https://sandbox.zenodo.org/api}"
+API="${ZENODO_API:-https://zenodo.org/api}"
 : "${ZENODO_TOKEN:?ZENODO_TOKEN is not set}"
 : "${TAG:?TAG is not set}"
 RECORD_ID="${RECORD_ID:-}"
