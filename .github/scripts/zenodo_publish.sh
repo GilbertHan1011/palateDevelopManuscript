@@ -58,10 +58,24 @@ done
 
 INIT=$(curl -fsS -X POST "${API}/records/${DRAFT_ID}/draft/files" "${curl_json[@]}" \
   -d "[{\"key\": \"${ZIP_FILE}\"}]")
-curl -fsS -X PUT "$(jq -r '.entries[0].links.content' <<<"${INIT}")" \
-  -H "Authorization: Bearer ${ZENODO_TOKEN}" \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary "@${ZIP_FILE}" >/dev/null
+
+upload_with_retry() {
+  local url="$1" file="$2" attempt
+  for attempt in 1 2 3 4 5; do
+    if curl -fsS -X PUT "$url" \
+      -H "Authorization: Bearer ${ZENODO_TOKEN}" \
+      -H "Content-Type: application/octet-stream" \
+      --data-binary "@${file}"; then
+      return 0
+    fi
+    echo ">> Upload attempt ${attempt} failed, retrying in 60s..."
+    sleep 60
+  done
+  echo ">> Upload failed after 5 attempts" >&2
+  return 1
+}
+
+upload_with_retry "$(jq -r '.entries[0].links.content' <<<"${INIT}")" "${ZIP_FILE}"
 curl -fsS -X POST "$(jq -r '.entries[0].links.commit' <<<"${INIT}")" "${curl_json[@]}" >/dev/null
 echo ">> Uploaded ${ZIP_FILE}"
 
