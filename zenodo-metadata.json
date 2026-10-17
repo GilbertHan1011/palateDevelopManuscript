@@ -1,11 +1,14 @@
 {
   "title": "palateDevelopManuscript: Processing scripts and code for the palate development manuscript (scRNA-seq & ATAC-seq)",
   "creators": [
-    { "person_or_org": { "family_name": "Han", "given_name": "Gilbert", "type": "personal" } }
+    {
+      "person_or_org": { "family_name": "Han", "given_name": "Gilbert", "type": "personal" },
+      "affiliations": [{ "name": "Westlake University" }]
+    }
   ],
-  "description": "<p>Processing scripts, plotting code, and documentation accompanying the palate development manuscript, including basic scRNA-seq and ATAC-seq processing pipelines.</p>",
+  "description": "<p>Processing scripts, plotting code, and step-by-step documentation accompanying the manuscript <em>An ARID3A-dependent epithelial progenitor state supports timely palate morphogenesis</em>. The repository contains the basic scRNA-seq and ATAC-seq processing pipelines and figure-generation scripts.</p>",
   "resource_type": { "id": "software" },
   "license": { "id": "mit" },
   "publisher": "Zenodo",
-  "keywords": ["single-cell RNA-seq", "ATAC-seq", "palate development", "bioinformatics"]
+  "keywords": ["single-cell RNA-seq", "ATAC-seq", "palate development", "ARID3A", "bioinformatics"]
 }
